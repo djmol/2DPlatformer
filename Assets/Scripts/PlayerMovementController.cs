@@ -24,9 +24,13 @@ public class PlayerMovementController : MonoBehaviour {
 	bool lastInput;
 
 	// Jumping
+	bool canJump = true;
 	bool jumpPressedLastFrame = false;
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
+
+	// Angled ground
+	float angleLeeway = 5f;
 	
 	// Checks
 	bool grounded = false;
@@ -58,8 +62,11 @@ public class PlayerMovementController : MonoBehaviour {
 			cd.bounds.size.x,
 			cd.bounds.size.y
 		);
-		
+				
 		// --- Gravity & Ground Check ---
+		// Set flag to prevent player from jumping before character lands
+		bool landing = false;
+		
 		// If player is not grounded, apply gravity
 		if (!grounded) {
 			velocity = new Vector2(velocity.x, Mathf.Max(velocity.y - gravity, -maxFall));
@@ -104,15 +111,39 @@ public class PlayerMovementController : MonoBehaviour {
 
 			// If we hit ground, snap to the closest ground
 			if (hit) {
+				// Check if we're landing this frame
+				if (falling) {
+					SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
+					landing = true;
+				}
 				grounded = true;
 				falling = false;
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
-				SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
 				velocity = new Vector2(velocity.x, 0);
 			}
 			else {
 				grounded = false;
 			}
+		}
+
+		// --- Jumping ---
+		if (canJump && !landing) {
+			bool input = Input.GetButton("Jump");
+			
+			// Prevent player from holding down jump to autobounce
+			if (input && !jumpPressedLastFrame) {
+				prevJumpDownTime = Time.time;
+			}
+			else if (!input) {
+				prevJumpDownTime = 0f;
+			}
+
+			if (grounded && Time.time - prevJumpDownTime < jumpPressLeeway) {
+				velocity = new Vector2(velocity.x, jumpSpeed);
+				prevJumpDownTime = 0f;
+			}
+
+			jumpPressedLastFrame = input;
 		}
 
 		// --- Lateral Movement & Collisions ---
@@ -142,8 +173,8 @@ public class PlayerMovementController : MonoBehaviour {
 		// Check for lateral collisions
 		if (velocity.x != 0) {
 			// Determine first and last rays
-			Vector2 minRay = new Vector2(box.center.x, box.yMin + margin);
-			Vector2 maxRay = new Vector2(box.center.x, box.yMax - margin);
+			Vector2 minRay = new Vector2(box.center.x, box.yMin);
+			Vector2 maxRay = new Vector2(box.center.x, box.yMax);
 			
 			// Calculate ray distance and determine direction of movement
 			float rayDistance = box.width / 2 + Mathf.Abs(newVelocityX * Time.deltaTime);
@@ -153,29 +184,39 @@ public class PlayerMovementController : MonoBehaviour {
 			bool hit = false;
 			float closestHit = float.MaxValue;
 			int closestHitIndex = 0;
+			float lastFraction = 0;
+			int numHits = 0; // for debugging
 			for (int i = 0; i < hRays; i++) {
 				// Create and cast ray
 				float lerpDistance = (float)i / (float)(hRays - 1);
 				Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
 				Ray2D ray = new Ray2D(rayOrigin, rayDirection);
 				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.onlyCollisions);
-			
+				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
 				// Check raycast results
 				if (hitInfo[i].fraction > 0) {
 					hit = true;
+					numHits++; // for debugging
 					if (hitInfo[i].fraction < closestHit) {
 						closestHit = hitInfo[i].fraction;
 						closestHitIndex = i;
 					}
+					// If more than one ray hits, check the slope of what player is colliding with
+					if (lastFraction > 0) {
+						float slopeAngle = Vector2.Angle(hitInfo[i].point - hitInfo[i - 1].point, Vector2.right);
+						Debug.Log(Mathf.Abs(slopeAngle)); // for debugging
+						// If we hit a wall, snap to it
+						if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
+							transform.Translate(rayDirection * (hitInfo[i].distance - box.width / 2));
+							SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
+							velocity = new Vector2(0, velocity.y);
+							break;
+						}
+					}
+					lastFraction = hitInfo[i].fraction;
 				}
 			}
-
-			// If we hit something, snap to it
-			if (hit) {
-				transform.Translate(rayDirection * (hitInfo[closestHitIndex].distance - box.width/2));
-				SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
-				velocity = new Vector2(0, velocity.y);
-			}
+			if (numHits > 0) Debug.Log("Hits: " + numHits); // for debugging
 		}
 
 		// --- Ceiling Check ---
@@ -218,25 +259,6 @@ public class PlayerMovementController : MonoBehaviour {
 				velocity = new Vector2(velocity.x, 0);
 			}
 		}
-
-		// --- Jumping ---
-		bool input = Input.GetButton("Jump");
-		if (input && !jumpPressedLastFrame) {
-			prevJumpDownTime = Time.time;
-		}
-		else if (!input) {
-			prevJumpDownTime = 0f;
-		}
-
-		if (grounded && Time.time - prevJumpDownTime < jumpPressLeeway) {
-			velocity = new Vector2(velocity.x, jumpSpeed);
-			prevJumpDownTime = 0f;
-		}
-
-		jumpPressedLastFrame = input;
-		
-		// Apply jump
-		transform.Translate(velocity * Time.deltaTime);
 	}
 
 	void OnLand() {
