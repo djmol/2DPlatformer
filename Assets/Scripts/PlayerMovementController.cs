@@ -29,7 +29,7 @@ public class PlayerMovementController : MonoBehaviour {
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
 
-	// Angled ground
+	// Slopes
 	float angleLeeway = 5f;
 	
 	// Checks
@@ -40,6 +40,9 @@ public class PlayerMovementController : MonoBehaviour {
 	int hRays = 6;
 	int vRays = 4;
 	float margin = .02f;
+
+	// Moving platforms
+	MovingPlatform movingPlatform;
 
 	// Use this for initialization
 	void Start () {
@@ -78,7 +81,7 @@ public class PlayerMovementController : MonoBehaviour {
 		}
 
 		// Check for collisions below
-		// (No need to check if we're in mid-air but not falling)
+		// (No need to check if player is in mid-air but not falling)
 		if (grounded || falling) {
 			// Determine first and last rays
 			Vector2 minRay = new Vector2(box.xMin + margin, box.center.y);
@@ -109,20 +112,33 @@ public class PlayerMovementController : MonoBehaviour {
 				}
 			}
 
-			// If we hit ground, snap to the closest ground
+			// If player hits ground, snap to the closest ground
 			if (hit) {
-				// Check if we're landing this frame
+				// Check if player is landing this frame
 				if (falling) {
 					SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
 					landing = true;
 				}
 				grounded = true;
 				falling = false;
+				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
 				velocity = new Vector2(velocity.x, 0);
+
+				// Check if player is on a moving platform
+				MovingPlatform newMovingPlatform = hitInfo[closestHitIndex].transform.parent.gameObject.GetComponent<MovingPlatform>();
+				Debug.Log(hitInfo[closestHitIndex].transform.parent.gameObject.GetComponent<MovingPlatform>());
+				if (newMovingPlatform != null) {
+					movingPlatform = newMovingPlatform;
+					movingPlatform.GetOnPlatform(gameObject);
+				}
 			}
 			else {
 				grounded = false;
+				if (movingPlatform != null) {
+					movingPlatform.GetOffPlatform(gameObject);
+					movingPlatform = null;
+				}
 			}
 		}
 
@@ -181,7 +197,6 @@ public class PlayerMovementController : MonoBehaviour {
 			Vector2 rayDirection = (newVelocityX > 0) ? Vector2.right : Vector2.left;
 
 			RaycastHit2D[] hitInfo = new RaycastHit2D[hRays];
-			bool hit = false;
 			float closestHit = float.MaxValue;
 			int closestHitIndex = 0;
 			float lastFraction = 0;
@@ -191,11 +206,10 @@ public class PlayerMovementController : MonoBehaviour {
 				float lerpDistance = (float)i / (float)(hRays - 1);
 				Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
 				Ray2D ray = new Ray2D(rayOrigin, rayDirection);
-				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.onlyCollisions);
+				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
 				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
 				// Check raycast results
 				if (hitInfo[i].fraction > 0) {
-					hit = true;
 					numHits++; // for debugging
 					if (hitInfo[i].fraction < closestHit) {
 						closestHit = hitInfo[i].fraction;
