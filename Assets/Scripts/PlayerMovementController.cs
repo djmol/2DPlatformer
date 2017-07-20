@@ -4,7 +4,11 @@ using UnityEngine;
 
 public class PlayerMovementController : MonoBehaviour {
 
-	// Adapted from Travis Martin's platformer physics
+	/* Known bugs:
+	/* - If bottom of character falls down through bottom of soft-bottom platform, character warps up to lands on it 
+	 */
+
+	// Resources: Travis Martin's platformer physics
 	// Physics properties
 	public float accel = 4f;
 	public float maxSpeed = 150f;
@@ -31,6 +35,7 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Slopes
 	float angleLeeway = 5f;
+	RaycastHit2D closestHitInfo;
 	
 	// Checks
 	bool grounded = false;
@@ -108,6 +113,7 @@ public class PlayerMovementController : MonoBehaviour {
 					if (hitInfo[i].fraction < closestHit) {
 						closestHit = hitInfo[i].fraction;
 						closestHitIndex = i;
+						closestHitInfo = hitInfo[i];
 					}
 				}
 			}
@@ -123,11 +129,10 @@ public class PlayerMovementController : MonoBehaviour {
 				falling = false;
 				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
-				velocity = new Vector2(velocity.x, 0);
-
+				velocity = new Vector2(velocity.x, 0);			
+				
 				// Check if player is on a moving platform
 				MovingPlatform newMovingPlatform = hitInfo[closestHitIndex].transform.parent.gameObject.GetComponent<MovingPlatform>();
-				Debug.Log(hitInfo[closestHitIndex].transform.parent.gameObject.GetComponent<MovingPlatform>());
 				if (newMovingPlatform != null) {
 					movingPlatform = newMovingPlatform;
 					movingPlatform.GetOnPlatform(gameObject);
@@ -142,26 +147,6 @@ public class PlayerMovementController : MonoBehaviour {
 			}
 		}
 
-		// --- Jumping ---
-		if (canJump && !landing) {
-			bool input = Input.GetButton("Jump");
-			
-			// Prevent player from holding down jump to autobounce
-			if (input && !jumpPressedLastFrame) {
-				prevJumpDownTime = Time.time;
-			}
-			else if (!input) {
-				prevJumpDownTime = 0f;
-			}
-
-			if (grounded && Time.time - prevJumpDownTime < jumpPressLeeway) {
-				velocity = new Vector2(velocity.x, jumpSpeed);
-				prevJumpDownTime = 0f;
-			}
-
-			jumpPressedLastFrame = input;
-		}
-
 		// --- Lateral Movement & Collisions ---
 		// Get input
 		float hAxis = Input.GetAxisRaw("Horizontal");
@@ -172,6 +157,14 @@ public class PlayerMovementController : MonoBehaviour {
 		if (hAxis != 0) {
 			newVelocityX += accel * hAxis;
 			newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
+
+			// Account for slope
+			if (Mathf.Abs(closestHitInfo.normal.x) > 0.1f) {
+				velocity = new Vector2(velocity.x - (closestHitInfo.normal.x * 0.7f), velocity.y);
+				Vector2 newPosition = transform.position;
+				newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(velocity.x) * Time.deltaTime * ((velocity.x - closestHitInfo.normal.x > 0) ? 1 : -1);
+				transform.position = newPosition;
+			} 
 		}
 		// Decelerate if moving without input
 		else if (velocity.x != 0) {
@@ -187,7 +180,8 @@ public class PlayerMovementController : MonoBehaviour {
 		velocity = new Vector2(newVelocityX, velocity.y);
 
 		// Check for lateral collisions
-		if (velocity.x != 0) {
+		// (This condition will always be true, of course. It's temporary, but allows for moving platforms to push you while not riding them.)
+		if (velocity.x != 0 || velocity.x == 0) {
 			// Determine first and last rays
 			Vector2 minRay = new Vector2(box.center.x, box.yMin);
 			Vector2 maxRay = new Vector2(box.center.x, box.yMax);
@@ -209,7 +203,7 @@ public class PlayerMovementController : MonoBehaviour {
 				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
 				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
 				// Check raycast results
-				if (hitInfo[i].fraction > 0) {
+				/*if (hitInfo[i].fraction > 0) {
 					numHits++; // for debugging
 					if (hitInfo[i].fraction < closestHit) {
 						closestHit = hitInfo[i].fraction;
@@ -228,9 +222,8 @@ public class PlayerMovementController : MonoBehaviour {
 						}
 					}
 					lastFraction = hitInfo[i].fraction;
-				}
+				}*/
 			}
-			if (numHits > 0) Debug.Log("Hits: " + numHits); // for debugging
 		}
 
 		// --- Ceiling Check ---
@@ -272,6 +265,27 @@ public class PlayerMovementController : MonoBehaviour {
 				SendMessage("OnCeilingCollision", SendMessageOptions.DontRequireReceiver);
 				velocity = new Vector2(velocity.x, 0);
 			}
+		}
+
+
+		// --- Jumping ---
+		if (canJump && !landing) {
+			bool input = Input.GetButton("Jump");
+			
+			// Prevent player from holding down jump to autobounce
+			if (input && !jumpPressedLastFrame) {
+				prevJumpDownTime = Time.time;
+			}
+			else if (!input) {
+				prevJumpDownTime = 0f;
+			}
+
+			if (grounded && Time.time - prevJumpDownTime < jumpPressLeeway) {
+				velocity = new Vector2(velocity.x, jumpSpeed);
+				prevJumpDownTime = 0f;
+			}
+
+			jumpPressedLastFrame = input;
 		}
 	}
 
