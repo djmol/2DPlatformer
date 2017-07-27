@@ -2,10 +2,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class PlayerMovementController : MonoBehaviour {
+public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 	/* Known bugs:
-	/* - If bottom of character falls down through bottom of soft-bottom platform, character warps up to lands on it 
+	/* - If bottom of character falls down through bottom of soft-bottom platform, character warps up to lands on it. Same in vice-versa on soft-top.
 	 */
 
 	// Resources: Travis Martin's platformer physics
@@ -15,6 +15,8 @@ public class PlayerMovementController : MonoBehaviour {
 	public float gravity = 6f;
 	public float maxFall = 200f;
 	public float jumpSpeed = 200f;
+	float finalAccel;
+	float finalJumpSpeed;
 
 	// For collisions and convenience
 	Collider2D cd;
@@ -29,6 +31,7 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Jumping
 	bool canJump = true;
+	bool landing = false;
 	bool jumpPressedLastFrame = false;
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
@@ -48,6 +51,9 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Moving platforms
 	MovingPlatform movingPlatform;
+
+	// Ground effects
+	public GroundType groundType { get; set; }
 
 	// Use this for initialization
 	void Start () {
@@ -70,10 +76,14 @@ public class PlayerMovementController : MonoBehaviour {
 			cd.bounds.size.x,
 			cd.bounds.size.y
 		);
-				
+
+		// Set default values
+		finalJumpSpeed = jumpSpeed;
+		finalAccel = accel;
+
 		// --- Gravity & Ground Check ---
 		// Set flag to prevent player from jumping before character lands
-		bool landing = false;
+		landing = false;
 		
 		// If player is not grounded, apply gravity
 		if (!grounded) {
@@ -137,9 +147,19 @@ public class PlayerMovementController : MonoBehaviour {
 					movingPlatform = newMovingPlatform;
 					movingPlatform.GetOnPlatform(gameObject);
 				}
+
+				// Check ground for special attributes
+				if (hitInfo[closestHitIndex].collider.gameObject.tag.Equals("Icy")) {
+					groundType = GroundType.Icy;
+				} else if (hitInfo[closestHitIndex].collider.gameObject.tag.Equals("Bouncy")) {
+					groundType = GroundType.Bouncy;	
+				} else {
+					groundType = GroundType.Normal;
+				}
 			}
 			else {
 				grounded = false;
+				groundType = GroundType.NotGrounded;
 				if (movingPlatform != null) {
 					movingPlatform.GetOffPlatform(gameObject);
 					movingPlatform = null;
@@ -150,12 +170,13 @@ public class PlayerMovementController : MonoBehaviour {
 		// --- Lateral Movement & Collisions ---
 		// Get input
 		float hAxis = Input.GetAxisRaw("Horizontal");
-		
 		float newVelocityX = velocity.x;
+
+		ApplyGroundEffects();
 
 		// Move if input exists
 		if (hAxis != 0) {
-			newVelocityX += accel * hAxis;
+			newVelocityX += finalAccel * hAxis;
 			newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
 
 			// Account for slope
@@ -171,10 +192,10 @@ public class PlayerMovementController : MonoBehaviour {
 			int decelDir = (velocity.x > 0) ? -1 : 1;
 			// Ensure player doesn't decelerate past zero
 			newVelocityX += (velocity.x > 0) ?
-				((newVelocityX + accel * decelDir) < 0) ?
-			 		-newVelocityX : accel * decelDir
-				: ((newVelocityX + accel * decelDir) > 0) ?
-				    -newVelocityX : accel * decelDir;
+				((newVelocityX + finalAccel * decelDir) < 0) ?
+			 		-newVelocityX : finalAccel * decelDir
+				: ((newVelocityX + finalAccel * decelDir) > 0) ?
+				    -newVelocityX : finalAccel * decelDir;
 		}
 
 		velocity = new Vector2(newVelocityX, velocity.y);
@@ -203,7 +224,7 @@ public class PlayerMovementController : MonoBehaviour {
 				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
 				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
 				// Check raycast results
-				/*if (hitInfo[i].fraction > 0) {
+				if (hitInfo[i].fraction > 0) {
 					numHits++; // for debugging
 					if (hitInfo[i].fraction < closestHit) {
 						closestHit = hitInfo[i].fraction;
@@ -222,7 +243,7 @@ public class PlayerMovementController : MonoBehaviour {
 						}
 					}
 					lastFraction = hitInfo[i].fraction;
-				}*/
+				}
 			}
 		}
 
@@ -281,7 +302,7 @@ public class PlayerMovementController : MonoBehaviour {
 			}
 
 			if (grounded && Time.time - prevJumpDownTime < jumpPressLeeway) {
-				velocity = new Vector2(velocity.x, jumpSpeed);
+				velocity = new Vector2(velocity.x, finalJumpSpeed);
 				prevJumpDownTime = 0f;
 			}
 
@@ -301,6 +322,25 @@ public class PlayerMovementController : MonoBehaviour {
 		Debug.Log("Ceiling collision!");
 	}
 
+	public void ApplyGroundEffects() {
+		switch (groundType) {
+			case GroundType.Bouncy:
+				if (!landing) {
+					finalJumpSpeed = jumpSpeed * 1.5f;
+					velocity = new Vector2(velocity.x, jumpSpeed * .75f);
+					//prevJumpDownTime = 0f;
+				}
+				break;
+			case GroundType.Icy:
+				finalAccel = accel / 3;
+				break;
+			case GroundType.NotGrounded: 
+			case GroundType.Normal: 
+			default:
+				break;
+		}
+	}
+
 	/// <summary>
 	/// LateUpdate is called every frame, if the Behaviour is enabled.
 	/// It is called after all Update functions have been called.
@@ -313,8 +353,7 @@ public class PlayerMovementController : MonoBehaviour {
 	/// OnGUI is called for rendering and handling GUI events.
 	/// This function can be called multiple times per frame (one call per event).
 	/// </summary>
-	void OnGUI()
-	{
+	void OnGUI() {
 		GUI.Box(new Rect(5,5,80,40), "vel.X: " + velocity.x + "\nvel.Y: " + velocity.y);
 	}
 }

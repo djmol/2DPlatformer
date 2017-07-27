@@ -1,0 +1,1 @@
+﻿public enum GroundType { NotGrounded = -1, Normal = 0, Icy, Bouncy };
