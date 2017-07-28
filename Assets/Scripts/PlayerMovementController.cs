@@ -31,6 +31,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 	// Jumping
 	bool canJump = true;
+	bool canDoubleJump = true;
 	bool landing = false;
 	bool jumpPressedLastFrame = false;
 	float prevJumpDownTime = 0f;
@@ -301,9 +302,16 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				prevJumpDownTime = 0f;
 			}
 
-			if (grounded && Time.time - prevJumpDownTime < jumpPressLeeway) {
-				velocity = new Vector2(velocity.x, finalJumpSpeed);
-				prevJumpDownTime = 0f;
+			if (Time.time - prevJumpDownTime < jumpPressLeeway) {
+				if (grounded) {
+					velocity = new Vector2(velocity.x, finalJumpSpeed);
+					prevJumpDownTime = 0f;
+					canDoubleJump = true;
+				} else if (!grounded && canDoubleJump) {
+					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
+					prevJumpDownTime = 0f;
+					canDoubleJump = false;
+				}
 			}
 
 			jumpPressedLastFrame = input;
@@ -328,6 +336,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				if (!landing) {
 					finalJumpSpeed = jumpSpeed * 1.5f;
 					velocity = new Vector2(velocity.x, jumpSpeed * .75f);
+					canDoubleJump = false;
 					//prevJumpDownTime = 0f;
 				}
 				break;
