@@ -37,6 +37,16 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
 
+	// Wall sticking/jumping
+	bool canStickWall = true;
+	bool wallSticking = false;
+	bool wallSliding = false;
+	Vector2 wallDirection;
+	float wallSlideSpeed = 25f;
+	float wallSlideDelay = .25f;
+	float wallSlideTime = 0f;
+	float jumpAwayDistance = 50f;
+
 	// Slopes
 	float angleLeeway = 5f;
 	RaycastHit2D closestHitInfo;
@@ -46,8 +56,8 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	bool falling = false;
 
 	// Raycasting
-	int hRays = 6;
-	int vRays = 4;
+	int hRays = 8;
+	int vRays = 8;
 	float margin = .02f;
 
 	// Moving platforms
@@ -86,8 +96,8 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		// Set flag to prevent player from jumping before character lands
 		landing = false;
 		
-		// If player is not grounded, apply gravity
-		if (!grounded) {
+		// If player is not grounded or sticking to wall, apply gravity
+		if (!grounded && !(wallSticking || wallSliding)) {
 			velocity = new Vector2(velocity.x, Mathf.Max(velocity.y - gravity, -maxFall));
 		}
 
@@ -138,6 +148,8 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				}
 				grounded = true;
 				falling = false;
+				wallSliding = false;
+				wallSticking = false;
 				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
 				velocity = new Vector2(velocity.x, 0);			
@@ -240,12 +252,30 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 							transform.Translate(rayDirection * (hitInfo[i].distance - box.width / 2));
 							SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
 							velocity = new Vector2(0, velocity.y);
+
+							// Wall sticking
+							if (canStickWall && !grounded && !(wallSticking || wallSliding)) {
+								wallSticking = true;
+								wallDirection = rayDirection;
+								velocity = new Vector2(0,0);
+								wallSlideTime = Time.time + wallSlideDelay;
+								Debug.Log("slideTime: " + wallSlideTime);
+							}
+
 							break;
 						}
 					}
 					lastFraction = hitInfo[i].fraction;
 				}
 			}
+		}
+
+		// Wall sliding
+		if (wallSticking && Time.time >= wallSlideTime) {
+			Debug.Log("here");
+			velocity = Vector2.down * wallSlideSpeed;
+			wallSticking = false;
+			wallSliding = true;
 		}
 
 		// --- Ceiling Check ---
@@ -307,6 +337,10 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					velocity = new Vector2(velocity.x, finalJumpSpeed);
 					prevJumpDownTime = 0f;
 					canDoubleJump = true;
+				} else if (wallSticking || wallSliding) {
+					velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .95f);
+					wallSticking = false;
+					wallSliding = false;
 				} else if (!grounded && canDoubleJump) {
 					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
 					prevJumpDownTime = 0f;
