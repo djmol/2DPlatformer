@@ -42,8 +42,8 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	bool wallSticking = false;
 	bool wallSliding = false;
 	Vector2 wallDirection;
-	float wallSlideSpeed = 25f;
-	float wallSlideDelay = .25f;
+	float wallSlideSpeed = 40f;
+	float wallSlideDelay = .05f;
 	float wallSlideTime = 0f;
 	float jumpAwayDistance = 50f;
 
@@ -255,11 +255,14 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 							// Wall sticking
 							if (canStickWall && !grounded && !(wallSticking || wallSliding)) {
+								// Only stick if moving towards wall
+								if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
 								wallSticking = true;
 								wallDirection = rayDirection;
 								velocity = new Vector2(0,0);
 								wallSlideTime = Time.time + wallSlideDelay;
 								Debug.Log("slideTime: " + wallSlideTime);
+								}
 							}
 
 							break;
@@ -333,15 +336,20 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 			}
 
 			if (Time.time - prevJumpDownTime < jumpPressLeeway) {
+				// Normal jump
 				if (grounded) {
 					velocity = new Vector2(velocity.x, finalJumpSpeed);
 					prevJumpDownTime = 0f;
 					canDoubleJump = true;
-				} else if (wallSticking || wallSliding) {
-					velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .95f);
+				} 
+				// Wall jump
+				else if (wallSticking || wallSliding) {
+					velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .8f);
 					wallSticking = false;
 					wallSliding = false;
-				} else if (!grounded && canDoubleJump) {
+				} 
+				// Double jump
+				else if (!grounded && canDoubleJump) {
 					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
 					prevJumpDownTime = 0f;
 					canDoubleJump = false;
