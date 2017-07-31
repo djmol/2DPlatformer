@@ -11,10 +11,12 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	// Resources: Travis Martin's platformer physics
 	// Physics properties
 	public float accel = 4f;
-	public float maxSpeed = 150f;
+	public float maxSpeed = 50f;
 	public float gravity = 6f;
-	public float maxFall = 200f;
-	public float jumpSpeed = 200f;
+	public float maxFall = 110f;
+	public float jumpSpeed = 110f;
+	public float dashSpeed = 100f;
+	public float dashTime = .15f;
 	float finalAccel;
 	float finalJumpSpeed;
 
@@ -37,7 +39,14 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
 
+	// Dashing
+	float currentDashTime = 0f;
+	bool canDash = true;
+	bool dashing = false;
+	bool exitingDash = false;
+
 	// Wall sticking/jumping
+	bool lateralCollision = false;
 	bool canStickWall = true;
 	bool wallSticking = false;
 	bool wallSliding = false;
@@ -150,6 +159,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				falling = false;
 				wallSliding = false;
 				wallSticking = false;
+				exitingDash = false;
 				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
 				velocity = new Vector2(velocity.x, 0);			
@@ -183,14 +193,25 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		// --- Lateral Movement & Collisions ---
 		// Get input
 		float hAxis = Input.GetAxisRaw("Horizontal");
+		bool dash = Input.GetButtonDown("Fire1");
 		float newVelocityX = velocity.x;
-
+		Debug.Log(dash);
 		ApplyGroundEffects();
 
 		// Move if input exists
 		if (hAxis != 0) {
 			newVelocityX += finalAccel * hAxis;
-			newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
+			// Clamp speed to max if not exiting a dash (in order to keep air momentum)
+			if (!exitingDash)
+				newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
+
+			// Dash
+			if (canDash) {
+				if (dash && grounded && !dashing) {
+					StartCoroutine(Dash());
+					newVelocityX = dashSpeed * hAxis;
+				}
+			}
 
 			// Account for slope
 			if (Mathf.Abs(closestHitInfo.normal.x) > 0.1f) {
@@ -214,6 +235,8 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		velocity = new Vector2(newVelocityX, velocity.y);
 
 		// Check for lateral collisions
+		lateralCollision = false;
+
 		// (This condition will always be true, of course. It's temporary, but allows for moving platforms to push you while not riding them.)
 		if (velocity.x != 0 || velocity.x == 0) {
 			// Determine first and last rays
@@ -238,6 +261,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
 				// Check raycast results
 				if (hitInfo[i].fraction > 0) {
+					lateralCollision = true;
 					numHits++; // for debugging
 					if (hitInfo[i].fraction < closestHit) {
 						closestHit = hitInfo[i].fraction;
@@ -271,6 +295,12 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					lastFraction = hitInfo[i].fraction;
 				}
 			}
+		}
+
+		// If there are no lateral collisions, end wallstick/slide
+		if (!lateralCollision) {
+			wallSticking = false;
+			wallSliding = false;
 		}
 
 		// Wall sliding
@@ -358,6 +388,28 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 			jumpPressedLastFrame = input;
 		}
+	}
+
+	IEnumerator Dash() {
+		float normalMaxSpeed = maxSpeed;
+		yield return StartDash();
+		FinishDash(normalMaxSpeed);
+	}
+
+	IEnumerator StartDash () {
+		currentDashTime = dashTime;
+		while (currentDashTime > 0.0) {
+			dashing = true;
+			maxSpeed = dashSpeed;
+			currentDashTime -= Time.deltaTime;
+			yield return null;
+		}
+	}
+
+	void FinishDash (float normalMaxSpeed) {
+		maxSpeed = normalMaxSpeed;
+		dashing = false;
+		exitingDash = true;
 	}
 
 	void OnLand() {
