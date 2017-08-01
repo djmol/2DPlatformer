@@ -15,7 +15,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	public float gravity = 6f;
 	public float maxFall = 110f;
 	public float jumpSpeed = 110f;
-	public float dashSpeed = 100f;
+	public float dashSpeed = 80f;
 	public float dashTime = .15f;
 	float finalAccel;
 	float finalJumpSpeed;
@@ -43,6 +43,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	float currentDashTime = 0f;
 	bool canDash = true;
 	bool dashing = false;
+	bool wallDashing = false;
 	bool exitingDash = false;
 
 	// Wall sticking/jumping
@@ -190,6 +191,11 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 			}
 		}
 
+		if (landing) {
+			dashing = false;
+			exitingDash = false;
+		}
+
 		// --- Lateral Movement & Collisions ---
 		// Get input
 		float hAxis = Input.GetAxisRaw("Horizontal");
@@ -202,14 +208,18 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		if (hAxis != 0) {
 			newVelocityX += finalAccel * hAxis;
 			// Clamp speed to max if not exiting a dash (in order to keep air momentum)
-			if (!exitingDash)
-				newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
+			newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
 
 			// Dash
 			if (canDash) {
-				if (dash && grounded && !dashing) {
-					StartCoroutine(Dash());
-					newVelocityX = dashSpeed * hAxis;
+				if (dash) {
+					if (grounded && !dashing) {
+						StartCoroutine(Dash());
+						newVelocityX = dashSpeed * hAxis;
+					} else if ((wallSticking || wallSliding) & !wallDashing) {
+						StartCoroutine(Dash());
+						//newVelocityX = dashSpeed * hAxis;
+					}
 				}
 			}
 
@@ -379,7 +389,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					wallSliding = false;
 				} 
 				// Double jump
-				else if (!grounded && canDoubleJump) {
+				else if (!grounded && !(dashing || exitingDash) && canDoubleJump) {
 					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
 					prevJumpDownTime = 0f;
 					canDoubleJump = false;
@@ -392,11 +402,13 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 	IEnumerator Dash() {
 		float normalMaxSpeed = maxSpeed;
-		yield return StartDash();
+		yield return EnterDash();
+		yield return ExitDash();
 		FinishDash(normalMaxSpeed);
 	}
 
-	IEnumerator StartDash () {
+	IEnumerator EnterDash () {
+		// Dash for set amount of time
 		currentDashTime = dashTime;
 		while (currentDashTime > 0.0) {
 			dashing = true;
@@ -406,11 +418,21 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		}
 	}
 
-	void FinishDash (float normalMaxSpeed) {
-		maxSpeed = normalMaxSpeed;
+	IEnumerator ExitDash () {
+		// Terminate dash, but maintain max speed from dash until dash is exited
+		// This is to keep momentum in mid-air once the dash has ended
 		dashing = false;
 		exitingDash = true;
+		while (exitingDash) {
+			yield return null;
+		}
 	}
+
+	void FinishDash (float normalMaxSpeed) {
+		// Revert to normal max speed
+		maxSpeed = normalMaxSpeed;
+	}
+
 
 	void OnLand() {
 		Debug.Log("Landed!");
