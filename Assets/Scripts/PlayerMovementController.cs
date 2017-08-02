@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Extensions;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,7 +11,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 	// Resources: Travis Martin's platformer physics
 	// Physics properties
-	public float accel = 4f;
+	public float accel = 8f;
 	public float maxSpeed = 50f;
 	public float gravity = 6f;
 	public float maxFall = 110f;
@@ -34,7 +35,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	// Jumping
 	bool canJump = true;
 	bool canDoubleJump = true;
-	bool landing = false;
 	bool jumpPressedLastFrame = false;
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
@@ -42,15 +42,13 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	// Dashing
 	float currentDashTime = 0f;
 	bool canDash = true;
-	bool dashing = false;
+	bool dashReady = true;
 	bool wallDashing = false;
 	bool exitingDash = false;
 
 	// Wall sticking/jumping
 	bool lateralCollision = false;
 	bool canStickWall = true;
-	bool wallSticking = false;
-	bool wallSliding = false;
 	Vector2 wallDirection;
 	float wallSlideSpeed = 40f;
 	float wallSlideDelay = .05f;
@@ -63,7 +61,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	
 	// Checks
 	bool grounded = false;
-	bool falling = false;
 
 	// Raycasting
 	int hRays = 8;
@@ -76,10 +73,24 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	// Ground effects
 	public GroundType groundType { get; set; }
 
+	// Player movement state
+	[System.Flags]
+	enum MovementState {
+		Idle = 0x01,
+		Moving = 0x02,
+		Falling = 0x04,
+		Landing = 0x08,
+		Dashing = 0x16,
+		WallSticking = 0x32,
+		WallSliding = 0x64,
+	};
+	MovementState state;
+
 	// Use this for initialization
 	void Start () {
 		cd = GetComponent<BoxCollider2D>();
 		layerMask = 1 << LayerMask.NameToLayer("NormalCollisions");
+		state = MovementState.Idle;
 	}
 	
 	// Update is called once per frame
@@ -104,21 +115,21 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 		// --- Gravity & Ground Check ---
 		// Set flag to prevent player from jumping before character lands
-		landing = false;
+		state = state.Remove(MovementState.Landing);
 		
 		// If player is not grounded or sticking to wall, apply gravity
-		if (!grounded && !(wallSticking || wallSliding)) {
+		if (!grounded && state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding)) {
 			velocity = new Vector2(velocity.x, Mathf.Max(velocity.y - gravity, -maxFall));
 		}
 
 		// Check if player is currently falling
 		if (velocity.y < 0) {
-			falling = true;
+			state = state.Include(MovementState.Falling);
 		}
 
 		// Check for collisions below
 		// (No need to check if player is in mid-air but not falling)
-		if (grounded || falling) {
+		if (grounded || state.Has(MovementState.Falling)) {
 			// Determine first and last rays
 			Vector2 minRay = new Vector2(box.xMin + margin, box.center.y);
 			Vector2 maxRay = new Vector2(box.xMax - margin, box.center.y);	
@@ -152,14 +163,13 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 			// If player hits ground, snap to the closest ground
 			if (hit) {
 				// Check if player is landing this frame
-				if (falling) {
+				if (state.Has(MovementState.Falling)) {
 					SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
-					landing = true;
+					state = state.Include(MovementState.Landing);
 				}
 				grounded = true;
-				falling = false;
-				wallSliding = false;
-				wallSticking = false;
+				state = state.Remove(MovementState.Falling);
+				state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
 				exitingDash = false;
 				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
@@ -191,8 +201,8 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 			}
 		}
 
-		if (landing) {
-			dashing = false;
+		if (state.Has(MovementState.Landing)) {
+			state = state.Remove(MovementState.Dashing);
 			exitingDash = false;
 		}
 
@@ -213,10 +223,10 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 			// Dash
 			if (canDash) {
 				if (dash) {
-					if (grounded && !dashing) {
+					if (grounded && dashReady) {
 						StartCoroutine(Dash());
 						newVelocityX = dashSpeed * hAxis;
-					} else if ((wallSticking || wallSliding) & !wallDashing) {
+					} else if ((state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) & dashReady) {
 						StartCoroutine(Dash());
 						//newVelocityX = dashSpeed * hAxis;
 					}
@@ -266,7 +276,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				// Create and cast ray
 				float lerpDistance = (float)i / (float)(hRays - 1);
 				Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
-				Ray2D ray = new Ray2D(rayOrigin, rayDirection);
 				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
 				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
 				// Check raycast results
@@ -288,10 +297,10 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 							velocity = new Vector2(0, velocity.y);
 
 							// Wall sticking
-							if (canStickWall && !grounded && !(wallSticking || wallSliding)) {
+							if (canStickWall && !grounded && (state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding))) {
 								// Only stick if moving towards wall
 								if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
-								wallSticking = true;
+								state = state.Include(MovementState.WallSticking);
 								wallDirection = rayDirection;
 								velocity = new Vector2(0,0);
 								wallSlideTime = Time.time + wallSlideDelay;
@@ -305,20 +314,35 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					lastFraction = hitInfo[i].fraction;
 				}
 			}
-		}
 
-		// If there are no lateral collisions, end wallstick/slide
-		if (!lateralCollision) {
-			wallSticking = false;
-			wallSliding = false;
-		}
+			// Wall sticking
+			if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
+				velocity = new Vector2(0, velocity.y);
+				bool onWall = false;
 
-		// Wall sliding
-		if (wallSticking && Time.time >= wallSlideTime) {
-			Debug.Log("here");
-			velocity = Vector2.down * wallSlideSpeed;
-			wallSticking = false;
-			wallSliding = true;
+				// Check for wall regardless of horizontal velocity (allows player to hold direction away from wall)
+				for (int i = 0; i < hRays; i++) {
+					// Create and cast ray
+					float lerpDistance = (float)i / (float)(hRays - 1);
+					Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
+					hitInfo[i] = Physics2D.Raycast(rayOrigin, wallDirection, (box.width / 2) + .001f, RayLayers.sideRay);
+					if (hitInfo[i].fraction > 0) {
+						onWall = true;		
+					}
+				}
+				
+				// If no wall hit, end wallstick/slide
+				if (!onWall) {
+					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
+				}
+			}
+
+			// Wall sliding
+			if (state.Has(MovementState.WallSticking) && Time.time >= wallSlideTime) {
+				velocity = Vector2.down * wallSlideSpeed;
+				state = state.Remove(MovementState.WallSticking);
+				state = state.Include(MovementState.WallSliding);
+			}
 		}
 
 		// --- Ceiling Check ---
@@ -364,7 +388,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 
 		// --- Jumping ---
-		if (canJump && !landing) {
+		if (canJump && state.Missing(MovementState.Landing)) {
 			bool input = Input.GetButton("Jump");
 			
 			// Prevent player from holding down jump to autobounce
@@ -383,17 +407,17 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					canDoubleJump = true;
 				} 
 				// Wall jump
-				else if (wallSticking || wallSliding) {
+				else if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
 					velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .8f);
-					wallSticking = false;
-					wallSliding = false;
+					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
 				} 
 				// Double jump
-				else if (!grounded && !(dashing || exitingDash) && canDoubleJump) {
+				else if (!grounded && dashReady && canDoubleJump) {
 					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
 					prevJumpDownTime = 0f;
 					canDoubleJump = false;
 				}
+				state = state.Remove(MovementState.Falling);
 			}
 
 			jumpPressedLastFrame = input;
@@ -401,6 +425,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	}
 
 	IEnumerator Dash() {
+		dashReady = false;
 		float normalMaxSpeed = maxSpeed;
 		yield return EnterDash();
 		yield return ExitDash();
@@ -411,7 +436,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		// Dash for set amount of time
 		currentDashTime = dashTime;
 		while (currentDashTime > 0.0) {
-			dashing = true;
+			state = state.Include(MovementState.Dashing);
 			maxSpeed = dashSpeed;
 			currentDashTime -= Time.deltaTime;
 			yield return null;
@@ -421,7 +446,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	IEnumerator ExitDash () {
 		// Terminate dash, but maintain max speed from dash until dash is exited
 		// This is to keep momentum in mid-air once the dash has ended
-		dashing = false;
+		state = state.Remove(MovementState.Dashing);
 		exitingDash = true;
 		while (exitingDash) {
 			yield return null;
@@ -431,6 +456,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	void FinishDash (float normalMaxSpeed) {
 		// Revert to normal max speed
 		maxSpeed = normalMaxSpeed;
+		dashReady = true;
 	}
 
 
@@ -449,7 +475,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	public void ApplyGroundEffects() {
 		switch (groundType) {
 			case GroundType.Bouncy:
-				if (!landing) {
+				if (state.Missing(MovementState.Landing)) {
 					finalJumpSpeed = jumpSpeed * 1.5f;
 					velocity = new Vector2(velocity.x, jumpSpeed * .75f);
 					canDoubleJump = false;
@@ -480,5 +506,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	/// </summary>
 	void OnGUI() {
 		GUI.Box(new Rect(5,5,80,40), "vel.X: " + velocity.x + "\nvel.Y: " + velocity.y);
+		GUI.Box(new Rect(5,55,120,60), state.ToString());
 	}
 }
