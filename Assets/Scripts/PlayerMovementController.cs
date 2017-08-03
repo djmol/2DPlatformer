@@ -47,13 +47,14 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	bool exitingDash = false;
 
 	// Wall sticking/jumping
+	public float wallSlideSpeed = 40f;
+	public float wallSlideDelay = .05f;
+	public float jumpAwayDistance = 50f;
 	bool lateralCollision = false;
 	bool canStickWall = true;
 	Vector2 wallDirection;
-	float wallSlideSpeed = 40f;
-	float wallSlideDelay = .05f;
 	float wallSlideTime = 0f;
-	float jumpAwayDistance = 50f;
+	
 
 	// Slopes
 	float angleLeeway = 5f;
@@ -80,9 +81,10 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		Moving = 0x02,
 		Falling = 0x04,
 		Landing = 0x08,
-		Dashing = 0x16,
-		WallSticking = 0x32,
-		WallSliding = 0x64,
+		Jumping = 0x10,
+		Dashing = 0x20,
+		WallSticking = 0x40,
+		WallSliding = 0x80,
 	};
 	MovementState state;
 
@@ -90,7 +92,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	void Start () {
 		cd = GetComponent<BoxCollider2D>();
 		layerMask = 1 << LayerMask.NameToLayer("NormalCollisions");
-		state = MovementState.Idle;
 	}
 	
 	// Update is called once per frame
@@ -112,6 +113,16 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		// Set default values
 		finalJumpSpeed = jumpSpeed;
 		finalAccel = accel;
+		
+		// Get input and set idle state if applicable
+		float hAxis = Input.GetAxisRaw("Horizontal");
+		bool dashInput = Input.GetButtonDown("Fire1");
+		bool jumpInput = Input.GetButton("Jump");
+		if (hAxis == 0f && !dashInput && !jumpInput) {
+			state = state.Include(MovementState.Idle);
+		} else {
+			state = state.Remove(MovementState.Idle);
+		}
 
 		// --- Gravity & Ground Check ---
 		// Set flag to prevent player from jumping before character lands
@@ -166,9 +177,10 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				if (state.Has(MovementState.Falling)) {
 					SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
 					state = state.Include(MovementState.Landing);
+					state = state.Remove(MovementState.Jumping);
 				}
 				grounded = true;
-				state = state.Remove(MovementState.Falling);
+				state = state.Remove(MovementState.Falling);		
 				state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
 				exitingDash = false;
 				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
@@ -208,10 +220,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 		// --- Lateral Movement & Collisions ---
 		// Get input
-		float hAxis = Input.GetAxisRaw("Horizontal");
-		bool dash = Input.GetButtonDown("Fire1");
 		float newVelocityX = velocity.x;
-		Debug.Log(dash);
 		ApplyGroundEffects();
 
 		// Move if input exists
@@ -222,7 +231,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 			// Dash
 			if (canDash) {
-				if (dash) {
+				if (dashInput) {
 					if (grounded && dashReady) {
 						StartCoroutine(Dash());
 						newVelocityX = dashSpeed * hAxis;
@@ -289,7 +298,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					// If more than one ray hits, check the slope of what player is colliding with
 					if (lastFraction > 0) {
 						float slopeAngle = Vector2.Angle(hitInfo[i].point - hitInfo[i - 1].point, Vector2.right);
-						Debug.Log(Mathf.Abs(slopeAngle)); // for debugging
+						//Debug.Log(Mathf.Abs(slopeAngle)); // for debugging
 						// If we hit a wall, snap to it
 						if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
 							transform.Translate(rayDirection * (hitInfo[i].distance - box.width / 2));
@@ -301,10 +310,10 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 								// Only stick if moving towards wall
 								if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
 								state = state.Include(MovementState.WallSticking);
+								state = state.Remove(MovementState.Jumping);
 								wallDirection = rayDirection;
 								velocity = new Vector2(0,0);
 								wallSlideTime = Time.time + wallSlideDelay;
-								Debug.Log("slideTime: " + wallSlideTime);
 								}
 							}
 
@@ -389,13 +398,11 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 		// --- Jumping ---
 		if (canJump && state.Missing(MovementState.Landing)) {
-			bool input = Input.GetButton("Jump");
-			
 			// Prevent player from holding down jump to autobounce
-			if (input && !jumpPressedLastFrame) {
+			if (jumpInput && !jumpPressedLastFrame) {
 				prevJumpDownTime = Time.time;
 			}
-			else if (!input) {
+			else if (!jumpInput) {
 				prevJumpDownTime = 0f;
 			}
 
@@ -418,10 +425,12 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 					canDoubleJump = false;
 				}
 				state = state.Remove(MovementState.Falling);
+				state = state.Include(MovementState.Jumping);
 			}
-
-			jumpPressedLastFrame = input;
+			jumpPressedLastFrame = jumpInput;
 		}
+
+		Debug.Log(state);
 	}
 
 	IEnumerator Dash() {
@@ -461,7 +470,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 
 
 	void OnLand() {
-		Debug.Log("Landed!");
+		//Debug.Log("Landed!");
 	}
 
 	void OnLateralCollision() {
@@ -498,6 +507,11 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	/// </summary>
 	void LateUpdate() {
 		transform.Translate(velocity * Time.deltaTime);
+		if (velocity != Vector2.zero) {
+			state = state.Include(MovementState.Moving);
+		} else {
+			state = state.Remove(MovementState.Moving);
+		}
 	}
 
 	/// <summary>
@@ -506,6 +520,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	/// </summary>
 	void OnGUI() {
 		GUI.Box(new Rect(5,5,80,40), "vel.X: " + velocity.x + "\nvel.Y: " + velocity.y);
-		GUI.Box(new Rect(5,55,120,60), state.ToString());
+		GUI.Box(new Rect(5,50,120,40), state.ToString());
 	}
 }
