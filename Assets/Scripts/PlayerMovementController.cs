@@ -1,9 +1,10 @@
 ﻿using Extensions;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
-public class PlayerMovementController : MonoBehaviour, IGroundMovement {
+public class PlayerMovementController : MonoBehaviour {
 
 	/* Known bugs:
 	/* - If bottom of character falls down through bottom of soft-bottom platform, character warps up to lands on it. Same in vice-versa on soft-top.
@@ -55,7 +56,6 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	Vector2 wallDirection;
 	float wallSlideTime = 0f;
 	
-
 	// Slopes
 	float angleLeeway = 5f;
 	RaycastHit2D closestHitInfo;
@@ -72,7 +72,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 	MovingPlatform movingPlatform;
 
 	// Ground effects
-	public GroundType groundType { get; set; }
+	IEnumerable<SpecialGround> groundTypes;
 
 	// Player movement state
 	[System.Flags]
@@ -195,17 +195,12 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 				}
 
 				// Check ground for special attributes
-				if (hitInfo[closestHitIndex].collider.gameObject.tag.Equals("Icy")) {
-					groundType = GroundType.Icy;
-				} else if (hitInfo[closestHitIndex].collider.gameObject.tag.Equals("Bouncy")) {
-					groundType = GroundType.Bouncy;	
-				} else {
-					groundType = GroundType.Normal;
-				}
+				groundTypes = hitInfo[closestHitIndex].collider.gameObject.GetComponents<SpecialGround>();
 			}
 			else {
 				grounded = false;
-				groundType = GroundType.NotGrounded;
+				// Clear ground properties
+				groundTypes = Enumerable.Empty<SpecialGround>();
 				if (movingPlatform != null) {
 					movingPlatform.GetOffPlatform(gameObject);
 					movingPlatform = null;
@@ -430,7 +425,7 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 			jumpPressedLastFrame = jumpInput;
 		}
 
-		Debug.Log(state);
+		//Debug.Log(state);
 	}
 
 	IEnumerator Dash() {
@@ -481,23 +476,22 @@ public class PlayerMovementController : MonoBehaviour, IGroundMovement {
 		Debug.Log("Ceiling collision!");
 	}
 
-	public void ApplyGroundEffects() {
-		switch (groundType) {
-			case GroundType.Bouncy:
+	void ApplyGroundEffects() {
+		foreach (var specialGround in groundTypes) {
+			System.Type type = specialGround.GetType();
+			// Icy ground
+			if (type.Equals(typeof(IcyGround))) {
+				finalAccel = accel * ((IcyGround)specialGround).accelerationRate;
+			} 
+			// Bouncy ground
+			else if (type.Equals(typeof(BouncyGround))) {
 				if (state.Missing(MovementState.Landing)) {
-					finalJumpSpeed = jumpSpeed * 1.5f;
-					velocity = new Vector2(velocity.x, jumpSpeed * .75f);
-					canDoubleJump = false;
+					finalJumpSpeed = jumpSpeed * ((BouncyGround)specialGround).bounceJumpRate;
+					velocity = new Vector2(velocity.x, jumpSpeed * ((BouncyGround)specialGround).bounceRate);
+					canDoubleJump = ((BouncyGround)specialGround).doubleJumpEnabled;
 					//prevJumpDownTime = 0f;
 				}
-				break;
-			case GroundType.Icy:
-				finalAccel = accel / 3;
-				break;
-			case GroundType.NotGrounded: 
-			case GroundType.Normal: 
-			default:
-				break;
+			}
 		}
 	}
 
