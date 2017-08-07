@@ -239,10 +239,12 @@ public class PlayerMovementController : MonoBehaviour {
 
 			// Account for slope
 			if (Mathf.Abs(closestHitInfo.normal.x) > 0.1f) {
-				velocity = new Vector2(velocity.x - (closestHitInfo.normal.x * 0.7f), velocity.y);
+				float friction = 0.7f;
+				newVelocityX = Mathf.Clamp((newVelocityX - (closestHitInfo.normal.x * friction)), -maxSpeed, maxSpeed);
 				Vector2 newPosition = transform.position;
-				newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(velocity.x) * Time.deltaTime * ((velocity.x - closestHitInfo.normal.x > 0) ? 1 : -1);
+				newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(newVelocityX) * Time.deltaTime * ((newVelocityX - closestHitInfo.normal.x > 0) ? 1 : -1);
 				transform.position = newPosition;
+				state = state.Remove(MovementState.Landing);			
 			} 
 		}
 		// Decelerate if moving without input
