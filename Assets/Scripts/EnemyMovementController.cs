@@ -18,11 +18,13 @@ public class EnemyMovementController : MonoBehaviour {
 	Collider2D bodyCd;
 	Collider2D[] cds;
 	Rect bodyBox;
+	float angleLeeway = 5f;
 
 	// Raycasting
-	int hRays = 4;
-	int vRays = 4;
-	RaycastHit2D closestHitInfo;
+	int hRays = 2;
+	int vRays = 2;
+	RaycastHit2D closestDownHitInfo;
+	RaycastHit2D closestLatHatInfo;
 
 	// Checks
 	bool grounded;
@@ -96,31 +98,31 @@ public class EnemyMovementController : MonoBehaviour {
 		}
 
 		// Determine first and last rays
-			Vector2 minRay = new Vector2(bodyBox.xMin, bodyBox.center.y);
-			Vector2 maxRay = new Vector2(bodyBox.xMax, bodyBox.center.y);	
+			Vector2 minDownRay = new Vector2(bodyBox.xMin, bodyBox.center.y);
+			Vector2 maxDownRay = new Vector2(bodyBox.xMax, bodyBox.center.y);	
 
 			// Calculate ray distance (if not grounded, set to current fall speed)
-			float rayDistance = bodyBox.height / 2 + ((grounded) ? 0 : Mathf.Abs(velocity.y * Time.deltaTime));
+			float rayDownDistance = bodyBox.height / 2 + ((grounded) ? 0 : Mathf.Abs(velocity.y * Time.deltaTime));
 
 			// Check below for ground
-			RaycastHit2D[] hitInfo = new RaycastHit2D[vRays];
+			RaycastHit2D[] hitDownInfo = new RaycastHit2D[vRays];
 			bool hit = false;
-			float closestHit = float.MaxValue;
-			int closestHitIndex = 0;
+			float closestDownHit = float.MaxValue;
+			int closestDownHitIndex = 0;
 			for (int i = 0; i < vRays; i++) {
 				// Create and cast ray
 				float lerpDistance = (float)i / (float)(vRays - 1);
-				Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
+				Vector2 rayOrigin = Vector2.Lerp(minDownRay, maxDownRay, lerpDistance);
 				Ray2D ray = new Ray2D(rayOrigin, Vector2.down);
-				hitInfo[i] = Physics2D.Raycast(rayOrigin, Vector2.down, rayDistance, RayLayers.downRay);
+				hitDownInfo[i] = Physics2D.Raycast(rayOrigin, Vector2.down, rayDownDistance, RayLayers.downRay);
 				
 				// Check raycast results and keep track of closest ground hit
-				if (hitInfo[i].fraction > 0) {
+				if (hitDownInfo[i].fraction > 0) {
 					hit = true;
-					if (hitInfo[i].fraction < closestHit) {
-						closestHit = hitInfo[i].fraction;
-						closestHitIndex = i;
-						closestHitInfo = hitInfo[i];
+					if (hitDownInfo[i].fraction < closestDownHit) {
+						closestDownHit = hitDownInfo[i].fraction;
+						closestDownHitIndex = i;
+						closestDownHitInfo = hitDownInfo[i];
 					}
 				}
 			}
@@ -178,18 +180,64 @@ public class EnemyMovementController : MonoBehaviour {
 						-newVelocityX : finalAccel * decelDir;
 			}
 			// Account for slope
-			if (Mathf.Abs(closestHitInfo.normal.x) > 0.1f) {
+			if (Mathf.Abs(closestDownHitInfo.normal.x) > 0.1f) {
 				float friction = 0.7f;
-				newVelocityX = Mathf.Clamp((newVelocityX - (closestHitInfo.normal.x * friction)), -maxSpeed, maxSpeed);
+				newVelocityX = Mathf.Clamp((newVelocityX - (closestDownHitInfo.normal.x * friction)), -maxSpeed, maxSpeed);
 				Vector2 newPosition = transform.position;
-				newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(newVelocityX) * Time.deltaTime * ((newVelocityX - closestHitInfo.normal.x > 0) ? 1 : -1);
+				newPosition.y += -closestDownHitInfo.normal.x * Mathf.Abs(newVelocityX) * Time.deltaTime * ((newVelocityX - closestDownHitInfo.normal.x > 0) ? 1 : -1);
 				transform.position = newPosition;
 				state = state.Remove(MovementState.Landing);			
 			} 
-			Debug.Log(newVelocityX);
+
 			velocity = new Vector2(newVelocityX, velocity.y);
 
-			// TODO: Horizontal collisions
+			// Lateral collisions
+			bool lateralCollision = false;
+
+			// Determine first and last rays
+			Vector2 minLatRay = new Vector2(bodyBox.center.x, bodyBox.yMin);
+			Vector2 maxLatRay = new Vector2(bodyBox.center.x, bodyBox.yMax);
+			
+			// Calculate ray distance and determine direction of movement
+			float rayDistance = bodyBox.width / 2 + Mathf.Abs(newVelocityX * Time.deltaTime);
+			Vector2 rayDirection = (newVelocityX > 0) ? Vector2.right : Vector2.left;
+
+			RaycastHit2D[] latHitInfo = new RaycastHit2D[hRays];
+			float closestLatHit = float.MaxValue;
+			int closestLatHitIndex = 0;
+			float lastFraction = 0;
+			int numHits = 0; // for debugging
+			for (int i = 0; i < hRays; i++) {
+				// Create and cast ray
+				float lerpDistance = (float)i / (float)(hRays - 1);
+				Vector2 rayOrigin = Vector2.Lerp(minLatRay, maxLatRay, lerpDistance);
+				latHitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
+				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
+				// Check raycast results
+				if (latHitInfo[i].fraction > 0) {
+					lateralCollision = true;
+					numHits++; // for debugging
+					if (latHitInfo[i].fraction < closestLatHit) {
+						closestLatHit = latHitInfo[i].fraction;
+						closestLatHitIndex = i;
+					}
+					// If more than one ray hits, check the slope of what player is colliding with
+					if (lastFraction > 0) {
+						float slopeAngle = Vector2.Angle(latHitInfo[i].point - latHitInfo[i - 1].point, Vector2.right);
+						// If we hit a wall, snap to it
+						if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
+							transform.Translate(rayDirection * (latHitInfo[i].distance - bodyBox.width / 2));
+							SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
+							velocity = new Vector2(0, velocity.y);
+
+							break;
+						}
+					}
+					lastFraction = latHitInfo[i].fraction;
+				}
+			}
+
+			// TODO: Ceiling collisions?
 			// TODO: Check if accel/decel is making enemy sink into slopes
 	}
 
@@ -207,6 +255,7 @@ public class EnemyMovementController : MonoBehaviour {
 	}
 
 	void OnLand() {}
+	void OnLateralCollision() {}
 
 	void ApplyGroundEffects() {
 		// TODO: Implement me!
