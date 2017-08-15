@@ -86,20 +86,28 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Health
 	public float hp;
-	float kbEndTime = 1f;
+	float kbRecoveryTime = 1.25f;
+	float kbEndTime = 0.35f;
 	float kbTime = 0;
+	float recoveryBlinkSpeed = 0.1f;
+	TouchDamage touchDamage = null;
 
 	// Player condition state
 	[System.Flags]
 	enum ConditionState {
 		Normal = 0x01,
 		Hit = 0x02,
+		Recovering = 0x04,
 	}
 	ConditionState conditionState;
+
+	// Rendering
+	SpriteRenderer rend;
 
 	// Use this for initialization
 	void Start () {
 		cd = GetComponent<BoxCollider2D>();
+		rend = GetComponent<SpriteRenderer>();
 		layerMask = 1 << LayerMask.NameToLayer("NormalCollisions");
 		state = MovementState.Idle;
 		conditionState = ConditionState.Normal;
@@ -125,10 +133,21 @@ public class PlayerMovementController : MonoBehaviour {
 		finalJumpSpeed = jumpSpeed;
 		finalAccel = accel;
 		
+		// --- Input ---
+		// TODO: Put this in update?
 		// Get input and set idle state if applicable
-		float hAxis = Input.GetAxisRaw("Horizontal");
-		bool dashInput = Input.GetButtonDown("Fire1");
-		bool jumpInput = Input.GetButton("Jump");
+		float hAxis = 0;
+		bool dashInput = false;
+		bool jumpInput = false;
+
+		// Restrict input if player is hit
+		if (conditionState.Missing(ConditionState.Hit)) {
+			hAxis = Input.GetAxisRaw("Horizontal");
+			dashInput = Input.GetButtonDown("Fire1");
+			jumpInput = Input.GetButton("Jump");
+		}
+
+		// Set idle state according to input
 		if (hAxis == 0f && !dashInput && !jumpInput) {
 			state = state.Include(MovementState.Idle);
 		} else {
@@ -224,179 +243,178 @@ public class PlayerMovementController : MonoBehaviour {
 			exitingDash = false;
 		}
 
-		if (conditionState.Missing(ConditionState.Hit)) {
-			// --- Lateral Movement & Collisions ---
-			// Get input
-			float newVelocityX = velocity.x;
-			ApplyGroundEffects();
+		// --- Lateral Movement & Collisions ---
+		// Get input
+		float newVelocityX = velocity.x;
+		ApplyGroundEffects();
 
-			// Move if input exists
-			if (hAxis != 0) {
-				newVelocityX += finalAccel * hAxis;
-				// Clamp speed to max if not exiting a dash (in order to keep air momentum)
-				newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
+		// Move if input exists
+		if (hAxis != 0) {
+			newVelocityX += finalAccel * hAxis;
+			// Clamp speed to max if not exiting a dash (in order to keep air momentum)
+			newVelocityX = Mathf.Clamp(newVelocityX, -maxSpeed, maxSpeed);
 
-				// Dash
-				if (canDash) {
-					if (dashInput) {
-						if (grounded && dashReady) {
-							StartCoroutine(Dash());
-							newVelocityX = dashSpeed * hAxis;
-						} else if ((state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) & dashReady) {
-							StartCoroutine(Dash());
-							//newVelocityX = dashSpeed * hAxis;
-						}
+			// Dash
+			if (canDash) {
+				if (dashInput) {
+					if (grounded && dashReady) {
+						StartCoroutine(Dash());
+						newVelocityX = dashSpeed * hAxis;
+					} else if ((state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) & dashReady) {
+						StartCoroutine(Dash());
+						//newVelocityX = dashSpeed * hAxis;
 					}
 				}
-
-				// Account for slope
-				if (Mathf.Abs(closestHitInfo.normal.x) > 0.1f) {
-					float friction = 0.7f;
-					newVelocityX = Mathf.Clamp((newVelocityX - (closestHitInfo.normal.x * friction)), -maxSpeed, maxSpeed);
-					Vector2 newPosition = transform.position;
-					newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(newVelocityX) * Time.deltaTime * ((newVelocityX - closestHitInfo.normal.x > 0) ? 1 : -1);
-					transform.position = newPosition;
-					state = state.Remove(MovementState.Landing);			
-				} 
-			}
-			// Decelerate if moving without input
-			else if (velocity.x != 0) {
-				int decelDir = (velocity.x > 0) ? -1 : 1;
-				// Ensure player doesn't decelerate past zero
-				newVelocityX += (velocity.x > 0) ?
-					((newVelocityX + finalAccel * decelDir) < 0) ?
-						-newVelocityX : finalAccel * decelDir
-					: ((newVelocityX + finalAccel * decelDir) > 0) ?
-						-newVelocityX : finalAccel * decelDir;
 			}
 
-			velocity = new Vector2(newVelocityX, velocity.y);
+			// Account for slope
+			if (Mathf.Abs(closestHitInfo.normal.x) > 0.1f) {
+				float friction = 0.7f;
+				newVelocityX = Mathf.Clamp((newVelocityX - (closestHitInfo.normal.x * friction)), -maxSpeed, maxSpeed);
+				Vector2 newPosition = transform.position;
+				newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(newVelocityX) * Time.deltaTime * ((newVelocityX - closestHitInfo.normal.x > 0) ? 1 : -1);
+				transform.position = newPosition;
+				state = state.Remove(MovementState.Landing);			
+			} 
+		}
+		// Decelerate if moving without input
+		else if (velocity.x != 0) {
+			int decelDir = (velocity.x > 0) ? -1 : 1;
+			// Ensure player doesn't decelerate past zero
+			newVelocityX += (velocity.x > 0) ?
+				((newVelocityX + finalAccel * decelDir) < 0) ?
+					-newVelocityX : finalAccel * decelDir
+				: ((newVelocityX + finalAccel * decelDir) > 0) ?
+					-newVelocityX : finalAccel * decelDir;
+		}
 
-			// Check for lateral collisions
-			lateralCollision = false;
+		velocity = new Vector2(newVelocityX, velocity.y);
 
-			// (This condition will always be true, of course. It's temporary, but allows for moving platforms to push you while not riding them.)
-			if (velocity.x != 0 || velocity.x == 0) {
-				// Determine first and last rays
-				Vector2 minRay = new Vector2(box.center.x, box.yMin);
-				Vector2 maxRay = new Vector2(box.center.x, box.yMax);
-				
-				// Calculate ray distance and determine direction of movement
-				float rayDistance = box.width / 2 + Mathf.Abs(newVelocityX * Time.deltaTime);
-				Vector2 rayDirection = (newVelocityX > 0) ? Vector2.right : Vector2.left;
+		// Check for lateral collisions
+		lateralCollision = false;
 
-				RaycastHit2D[] hitInfo = new RaycastHit2D[hRays];
-				float closestHit = float.MaxValue;
-				int closestHitIndex = 0;
-				float lastFraction = 0;
-				int numHits = 0; // for debugging
+		// (This condition will always be true, of course. It's temporary, but allows for moving platforms to push you while not riding them.)
+		if (velocity.x != 0 || velocity.x == 0) {
+			// Determine first and last rays
+			Vector2 minRay = new Vector2(box.center.x, box.yMin);
+			Vector2 maxRay = new Vector2(box.center.x, box.yMax);
+			
+			// Calculate ray distance and determine direction of movement
+			float rayDistance = box.width / 2 + Mathf.Abs(newVelocityX * Time.deltaTime);
+			Vector2 rayDirection = (newVelocityX > 0) ? Vector2.right : Vector2.left;
+
+			RaycastHit2D[] hitInfo = new RaycastHit2D[hRays];
+			float closestHit = float.MaxValue;
+			int closestHitIndex = 0;
+			float lastFraction = 0;
+			int numHits = 0; // for debugging
+			for (int i = 0; i < hRays; i++) {
+				// Create and cast ray
+				float lerpDistance = (float)i / (float)(hRays - 1);
+				Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
+				hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
+				Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
+				// Check raycast results
+				if (hitInfo[i].fraction > 0) {
+					lateralCollision = true;
+					numHits++; // for debugging
+					if (hitInfo[i].fraction < closestHit) {
+						closestHit = hitInfo[i].fraction;
+						closestHitIndex = i;
+					}
+					// If more than one ray hits, check the slope of what player is colliding with
+					if (lastFraction > 0) {
+						float slopeAngle = Vector2.Angle(hitInfo[i].point - hitInfo[i - 1].point, Vector2.right);
+						//Debug.Log(Mathf.Abs(slopeAngle)); // for debugging
+						// If we hit a wall, snap to it
+						if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
+							transform.Translate(rayDirection * (hitInfo[i].distance - box.width / 2));
+							SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
+							velocity = new Vector2(0, velocity.y);
+
+							// Wall sticking
+							if (canStickWall && !grounded && (state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding))) {
+								// Only stick if moving towards wall
+								if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
+								state = state.Include(MovementState.WallSticking);
+								state = state.Remove(MovementState.Jumping);
+								wallDirection = rayDirection;
+								velocity = new Vector2(0,0);
+								wallSlideTime = Time.time + wallSlideDelay;
+								}
+							}
+
+							break;
+						}
+					}
+					lastFraction = hitInfo[i].fraction;
+				}
+			}
+
+			// Wall sticking
+			if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
+				velocity = new Vector2(0, velocity.y);
+				bool onWall = false;
+
+				// Check for wall regardless of horizontal velocity (allows player to hold direction away from wall)
 				for (int i = 0; i < hRays; i++) {
 					// Create and cast ray
 					float lerpDistance = (float)i / (float)(hRays - 1);
 					Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
-					hitInfo[i] = Physics2D.Raycast(rayOrigin, rayDirection, rayDistance, RayLayers.sideRay);
-					Debug.DrawRay(rayOrigin, rayDirection * rayDistance, Color.cyan, Time.deltaTime);
-					// Check raycast results
+					hitInfo[i] = Physics2D.Raycast(rayOrigin, wallDirection, (box.width / 2) + .001f, RayLayers.sideRay);
 					if (hitInfo[i].fraction > 0) {
-						lateralCollision = true;
-						numHits++; // for debugging
-						if (hitInfo[i].fraction < closestHit) {
-							closestHit = hitInfo[i].fraction;
-							closestHitIndex = i;
-						}
-						// If more than one ray hits, check the slope of what player is colliding with
-						if (lastFraction > 0) {
-							float slopeAngle = Vector2.Angle(hitInfo[i].point - hitInfo[i - 1].point, Vector2.right);
-							//Debug.Log(Mathf.Abs(slopeAngle)); // for debugging
-							// If we hit a wall, snap to it
-							if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
-								transform.Translate(rayDirection * (hitInfo[i].distance - box.width / 2));
-								SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
-								velocity = new Vector2(0, velocity.y);
-
-								// Wall sticking
-								if (canStickWall && !grounded && (state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding))) {
-									// Only stick if moving towards wall
-									if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
-									state = state.Include(MovementState.WallSticking);
-									state = state.Remove(MovementState.Jumping);
-									wallDirection = rayDirection;
-									velocity = new Vector2(0,0);
-									wallSlideTime = Time.time + wallSlideDelay;
-									}
-								}
-
-								break;
-							}
-						}
-						lastFraction = hitInfo[i].fraction;
+						onWall = true;		
 					}
 				}
-
-				// Wall sticking
-				if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
-					velocity = new Vector2(0, velocity.y);
-					bool onWall = false;
-
-					// Check for wall regardless of horizontal velocity (allows player to hold direction away from wall)
-					for (int i = 0; i < hRays; i++) {
-						// Create and cast ray
-						float lerpDistance = (float)i / (float)(hRays - 1);
-						Vector2 rayOrigin = Vector2.Lerp(minRay, maxRay, lerpDistance);
-						hitInfo[i] = Physics2D.Raycast(rayOrigin, wallDirection, (box.width / 2) + .001f, RayLayers.sideRay);
-						if (hitInfo[i].fraction > 0) {
-							onWall = true;		
-						}
-					}
-					
-					// If no wall hit, end wallstick/slide
-					if (!onWall) {
-						state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
-					}
-				}
-
-				// Wall sliding
-				if (state.Has(MovementState.WallSticking) && Time.time >= wallSlideTime) {
-					velocity = Vector2.down * wallSlideSpeed;
-					state = state.Remove(MovementState.WallSticking);
-					state = state.Include(MovementState.WallSliding);
+				
+				// If no wall hit, end wallstick/slide
+				if (!onWall) {
+					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
 				}
 			}
 
-			// --- Jumping ---
-			if (canJump && state.Missing(MovementState.Landing)) {
-				// Prevent player from holding down jump to autobounce
-				if (jumpInput && !jumpPressedLastFrame) {
-					prevJumpDownTime = Time.time;
-				}
-				else if (!jumpInput) {
-					prevJumpDownTime = 0f;
-				}
-
-				if (Time.time - prevJumpDownTime < jumpPressLeeway) {
-					// Normal jump
-					if (grounded) {
-						velocity = new Vector2(velocity.x, finalJumpSpeed);
-						prevJumpDownTime = 0f;
-						canDoubleJump = true;
-					} 
-					// Wall jump
-					else if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
-						velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .8f);
-						state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
-					} 
-					// Double jump
-					else if (!grounded && dashReady && canDoubleJump) {
-						velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
-						prevJumpDownTime = 0f;
-						canDoubleJump = false;
-					}
-					state = state.Remove(MovementState.Falling);
-					state = state.Include(MovementState.Jumping);
-				}
-				jumpPressedLastFrame = jumpInput;
+			// Wall sliding
+			if (state.Has(MovementState.WallSticking) && Time.time >= wallSlideTime) {
+				velocity = Vector2.down * wallSlideSpeed;
+				state = state.Remove(MovementState.WallSticking);
+				state = state.Include(MovementState.WallSliding);
 			}
 		}
+
+		// --- Jumping ---
+		if (canJump && state.Missing(MovementState.Landing)) {
+			// Prevent player from holding down jump to autobounce
+			if (jumpInput && !jumpPressedLastFrame) {
+				prevJumpDownTime = Time.time;
+			}
+			else if (!jumpInput) {
+				prevJumpDownTime = 0f;
+			}
+
+			if (Time.time - prevJumpDownTime < jumpPressLeeway) {
+				// Normal jump
+				if (grounded) {
+					velocity = new Vector2(velocity.x, finalJumpSpeed);
+					prevJumpDownTime = 0f;
+					canDoubleJump = true;
+				} 
+				// Wall jump
+				else if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
+					velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .8f);
+					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
+				} 
+				// Double jump
+				else if (!grounded && dashReady && canDoubleJump) {
+					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
+					prevJumpDownTime = 0f;
+					canDoubleJump = false;
+				}
+				state = state.Remove(MovementState.Falling);
+				state = state.Include(MovementState.Jumping);
+			}
+			jumpPressedLastFrame = jumpInput;
+		}
+		
 
 		// --- Ceiling Check ---
 		// Only check if we're grounded or jumping
@@ -437,6 +455,16 @@ public class PlayerMovementController : MonoBehaviour {
 				SendMessage("OnCeilingCollision", SendMessageOptions.DontRequireReceiver);
 				velocity = new Vector2(velocity.x, 0);
 			}
+		}
+
+		// --- Damage ---
+		// Apply hit if detected by collider
+		if (touchDamage != null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {
+			conditionState = conditionState.Include(ConditionState.Hit); 
+			conditionState = conditionState.Remove(ConditionState.Normal);
+			state = state.Remove(MovementState.Dashing | MovementState.WallSticking | MovementState.WallSliding);
+			velocity = Vector2.zero;
+			StartCoroutine(ApplyHit(touchDamage.damage, touchDamage.knockback, touchDamage.direction));
 		}
 
 		//Debug.Log(state);
@@ -528,23 +556,24 @@ public class PlayerMovementController : MonoBehaviour {
 	/// </summary>
 	/// <param name="other">The other Collider2D involved in this collision.</param>
 	void OnTriggerStay2D(Collider2D other) {
-		if (other.gameObject.GetComponent<TouchDamage>() && conditionState.Missing(ConditionState.Hit)) {	
-			// TODO: Why is this firing so many times?					
-			conditionState.Include(ConditionState.Hit);
-			conditionState.Remove(ConditionState.Normal);
-			TouchDamage hit = other.gameObject.GetComponent<TouchDamage>();
-			StartCoroutine(TakeHit(hit.damage, hit.knockback, (transform.position - other.transform.position).normalized));
+		if (other.gameObject.GetComponent<TouchDamage>() && touchDamage == null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {					
+			touchDamage = other.gameObject.GetComponent<TouchDamage>();
+			touchDamage.direction = (transform.position.x > other.transform.position.x) ? Vector2.right : Vector2.left;
 		}
 	}
 
-	IEnumerator TakeHit (float damage, float knockback, Vector2 knockbackDir) {
-		Debug.Log("time to die");
+	IEnumerator ApplyHit (float damage, float knockback, Vector2 knockbackDir) {
+		// Apply damage and knockback from hit
+		touchDamage = null;
 		hp -= damage;
 		yield return StartCoroutine(ApplyKnockback(knockback, knockbackDir));
-		EndKnockback();
+		yield return StartCoroutine(EndKnockback());
+		EndHit();
+		
 	}
 
 	IEnumerator ApplyKnockback (float knockback, Vector2 knockbackDir) {
+		// Force character to move back from source of damage
 		while (kbTime < kbEndTime) {
 			kbTime += Time.deltaTime;
 			velocity = new Vector2(knockbackDir.x * knockback, velocity.y);
@@ -552,11 +581,24 @@ public class PlayerMovementController : MonoBehaviour {
 		}
 	}
 
-	void EndKnockback() {
+	IEnumerator EndKnockback() {
 		kbTime = 0;
-		Debug.Log("here now");
-		conditionState.Remove(ConditionState.Hit);
-		conditionState.Include(ConditionState.Normal);
+		conditionState = conditionState.Remove(ConditionState.Hit);
+		conditionState = conditionState.Include(ConditionState.Recovering);
+		// Blink and enjoy the recovery period
+		while (kbTime < kbRecoveryTime * recoveryBlinkSpeed) {
+			kbTime += Time.deltaTime;
+			rend.enabled = !rend.enabled;
+            yield return new WaitForSeconds(recoveryBlinkSpeed);
+		}
+		// Ensure renderer is enabled upon return
+		rend.enabled = true;
+	}
+
+	void EndHit() {
+		kbTime = 0;
+		conditionState = conditionState.Remove(ConditionState.Recovering);
+		conditionState = conditionState.Include(ConditionState.Normal);
 	}
 
 	/// <summary>
