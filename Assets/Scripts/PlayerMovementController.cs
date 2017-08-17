@@ -29,6 +29,7 @@ public class PlayerMovementController : MonoBehaviour {
 	int layerMask;
 	float angleLeeway = 5f;
 	RaycastHit2D closestHitInfo;
+	public Vector2 facing { get; private set; }
 
 	// Inputs
 	bool lastInput;
@@ -84,8 +85,8 @@ public class PlayerMovementController : MonoBehaviour {
 	};
 	MovementState state;
 
-	// Health
-	public float hp;
+	// Health & damage
+	PlayerHealth playerHealth;
 	float kbRecoveryTime = 1.25f;
 	float kbEndTime = 0.35f;
 	float kbTime = 0;
@@ -108,9 +109,11 @@ public class PlayerMovementController : MonoBehaviour {
 	void Start () {
 		cd = GetComponent<BoxCollider2D>();
 		rend = GetComponent<SpriteRenderer>();
+		playerHealth = GetComponent<PlayerHealth>();
 		layerMask = 1 << LayerMask.NameToLayer("NormalCollisions");
 		state = MovementState.Idle;
 		conditionState = ConditionState.Normal;
+		facing = Vector2.right;
 	}
 	
 	// Update is called once per frame
@@ -146,6 +149,10 @@ public class PlayerMovementController : MonoBehaviour {
 			dashInput = Input.GetButtonDown("Fire1");
 			jumpInput = Input.GetButton("Jump");
 		}
+
+		// Set facing direction
+		if (hAxis != 0)
+			facing = new Vector2(hAxis, 0);
 
 		// Set idle state according to input
 		if (hAxis == 0f && !dashInput && !jumpInput) {
@@ -565,7 +572,7 @@ public class PlayerMovementController : MonoBehaviour {
 	IEnumerator ApplyHit (float damage, float knockback, Vector2 knockbackDir) {
 		// Apply damage and knockback from hit
 		touchDamage = null;
-		hp -= damage;
+		playerHealth.TakeDamage(damage);
 		yield return StartCoroutine(ApplyKnockback(knockback, knockbackDir));
 		yield return StartCoroutine(EndKnockback());
 		EndHit();
@@ -576,7 +583,9 @@ public class PlayerMovementController : MonoBehaviour {
 		// Force character to move back from source of damage
 		while (kbTime < kbEndTime) {
 			kbTime += Time.deltaTime;
-			velocity = new Vector2(knockbackDir.x * knockback, velocity.y);
+			Debug.Log((knockback - (knockback * (kbTime / kbEndTime))));
+			// Slow down over the course of the knockback
+			velocity = new Vector2(knockbackDir.x * (knockback - (knockback * (kbTime / kbEndTime))), velocity.y);
 			yield return null;
 		}
 	}
@@ -607,6 +616,6 @@ public class PlayerMovementController : MonoBehaviour {
 	/// </summary>
 	void OnGUI() {
 		GUI.Box(new Rect(5,5,80,40), "vel.X: " + velocity.x + "\nvel.Y: " + velocity.y);
-		GUI.Box(new Rect(5,50,120,40), conditionState.ToString());
+		GUI.Box(new Rect(5,50,120,40), "" + playerHealth.hp);
 	}
 }
