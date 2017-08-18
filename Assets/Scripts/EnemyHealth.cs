@@ -4,7 +4,6 @@ using UnityEngine;
 
 public class EnemyHealth : Health {
 
-
 	// Use this for initialization
 	void Start () {
 
@@ -12,7 +11,8 @@ public class EnemyHealth : Health {
 	
 	// Update is called once per frame
 	void Update () {
-		
+		if (hp <= 0)
+			Die();
 	}
 
 	void Die() {

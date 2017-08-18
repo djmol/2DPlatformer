@@ -10,6 +10,9 @@ public class Shot : PlayerAttack {
 	float time = 0;
 	Vector2 velocity;
 
+	EnemyHitbox hitbox;
+	bool hit = false;
+
 	// Use this for initialization
 	void Start () {
 		velocity = direction * speed;
@@ -19,18 +22,15 @@ public class Shot : PlayerAttack {
 	void Update () {
 		time += Time.deltaTime;
 
+		if (hitbox != null && !hit) {
+			hitbox.Hit(gameObject);
+			hitbox = null;
+			hit = true;
+		}
+
 		if (time >= lifetime) {
 			Destroy(gameObject, 0f);
 		}
-
-		// TODO: Add collider, collisions, damage
-	}
-
-	/// <summary>
-	/// This function is called every fixed framerate frame, if the MonoBehaviour is enabled.
-	/// </summary>
-	void FixedUpdate() {
-
 	}
 
 	/// <summary>
@@ -39,5 +39,20 @@ public class Shot : PlayerAttack {
 	/// </summary>
 	void LateUpdate() {
 		transform.Translate(velocity * Time.deltaTime);
+	}
+
+	override public void HitTaken() {
+		Destroy(gameObject, 0f);
+	}
+
+	/// <summary>
+	/// Sent each frame where another object is within a trigger collider
+	/// attached to this object (2D physics only).
+	/// </summary>
+	/// <param name="other">The other Collider2D involved in this collision.</param>
+	void OnTriggerStay2D(Collider2D other) {
+		if (other.gameObject.GetComponent<EnemyHitbox>()) {
+			hitbox = other.gameObject.GetComponent<EnemyHitbox>();
+		}
 	}
 }

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class PlayerAttack : MonoBehaviour {
+abstract public class PlayerAttack : MonoBehaviour {
 
 	public float damage;
 
@@ -15,4 +15,6 @@ public class PlayerAttack : MonoBehaviour {
 	void Update () {
 		
 	}
+
+	abstract public void HitTaken();
 }

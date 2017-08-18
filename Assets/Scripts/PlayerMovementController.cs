@@ -583,7 +583,6 @@ public class PlayerMovementController : MonoBehaviour {
 		// Force character to move back from source of damage
 		while (kbTime < kbEndTime) {
 			kbTime += Time.deltaTime;
-			Debug.Log((knockback - (knockback * (kbTime / kbEndTime))));
 			// Slow down over the course of the knockback
 			velocity = new Vector2(knockbackDir.x * (knockback - (knockback * (kbTime / kbEndTime))), velocity.y);
 			yield return null;
