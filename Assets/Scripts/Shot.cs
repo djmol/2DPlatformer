@@ -52,7 +52,11 @@ public class Shot : PlayerAttack {
 	/// <param name="other">The other Collider2D involved in this collision.</param>
 	void OnTriggerStay2D(Collider2D other) {
 		if (other.gameObject.GetComponent<EnemyHitbox>()) {
+			// Get enemy hitbox hit
 			hitbox = other.gameObject.GetComponent<EnemyHitbox>();
+		} else if (other.gameObject.layer == LayerMask.NameToLayer("NormalCollisions")) {
+			// Destroy if colliding with wall
+			Destroy(gameObject, 0f);
 		}
 	}
 }

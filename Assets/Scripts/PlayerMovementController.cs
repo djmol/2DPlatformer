@@ -42,6 +42,7 @@ public class PlayerMovementController : MonoBehaviour {
 	float jumpPressLeeway = 0.1f;
 
 	// Dashing
+	public GameObject trail;
 	float currentDashTime = 0f;
 	bool canDash = true;
 	bool dashReady = true;
@@ -489,6 +490,7 @@ public class PlayerMovementController : MonoBehaviour {
 		// Dash for set amount of time
 		currentDashTime = dashTime;
 		while (currentDashTime > 0.0) {
+			StartCoroutine(CreateDashTrail());
 			state = state.Include(MovementState.Dashing);
 			maxSpeed = dashSpeed;
 			currentDashTime -= Time.deltaTime;
@@ -512,6 +514,26 @@ public class PlayerMovementController : MonoBehaviour {
 		dashReady = true;
 	}
 
+	IEnumerator CreateDashTrail() {
+		GameObject newTrail = Instantiate(trail, transform.position, transform.rotation);
+		SpriteRenderer trailRend = newTrail.GetComponent<SpriteRenderer>();
+		trailRend.sprite = rend.sprite;
+		trailRend.transform.localScale = rend.transform.localScale;
+		Color alphaColor = rend.color;
+		alphaColor.a *= .4f;
+		trailRend.color = alphaColor;
+		yield return StartCoroutine(FadeDashTrail(trailRend));
+		Destroy(newTrail);
+	}
+
+	IEnumerator FadeDashTrail(SpriteRenderer trailRend) {
+		while (trailRend.color.a > 0f) {
+			Color alphaColor = trailRend.color;
+			alphaColor.a -= .05f;
+			trailRend.color = alphaColor;
+			yield return null;
+		}
+	}
 
 	void OnLand() {
 		//Debug.Log("Landed!");
