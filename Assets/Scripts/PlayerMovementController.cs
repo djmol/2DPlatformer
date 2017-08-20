@@ -35,8 +35,9 @@ public class PlayerMovementController : MonoBehaviour {
 	bool lastInput;
 
 	// Jumping
+	public GameObject doubleJumpPS;
 	bool canJump = true;
-	bool canDoubleJump = true;
+	bool canDoubleJump = false;
 	bool jumpPressedLastFrame = false;
 	float prevJumpDownTime = 0f;
 	float jumpPressLeeway = 0.1f;
@@ -50,9 +51,12 @@ public class PlayerMovementController : MonoBehaviour {
 	bool exitingDash = false;
 
 	// Wall sticking/jumping
+	public GameObject wallSlidePS;
 	public float wallSlideSpeed = 40f;
 	public float wallSlideDelay = .05f;
-	public float jumpAwayDistance = 50f;
+	public float wallJumpAwayDistance = 50f;
+	GameObject currentWallSlidePS = null;
+	float lastWallSlidePSEmission = 0f;
 	bool lateralCollision = false;
 	bool canStickWall = true;
 	Vector2 wallDirection;
@@ -344,11 +348,11 @@ public class PlayerMovementController : MonoBehaviour {
 							if (canStickWall && !grounded && (state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding))) {
 								// Only stick if moving towards wall
 								if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
-								state = state.Include(MovementState.WallSticking);
-								state = state.Remove(MovementState.Jumping);
-								wallDirection = rayDirection;
-								velocity = new Vector2(0,0);
-								wallSlideTime = Time.time + wallSlideDelay;
+									state = state.Include(MovementState.WallSticking);
+									state = state.Remove(MovementState.Jumping);
+									wallDirection = rayDirection;
+									velocity = new Vector2(0,0);
+									wallSlideTime = Time.time + wallSlideDelay;
 								}
 							}
 
@@ -363,6 +367,8 @@ public class PlayerMovementController : MonoBehaviour {
 			if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
 				velocity = new Vector2(0, velocity.y);
 				bool onWall = false;
+				float lowestY = float.MaxValue;
+				RaycastHit2D lowestYHit = new RaycastHit2D();
 
 				// Check for wall regardless of horizontal velocity (allows player to hold direction away from wall)
 				for (int i = 0; i < hRays; i++) {
@@ -372,13 +378,33 @@ public class PlayerMovementController : MonoBehaviour {
 					hitInfo[i] = Physics2D.Raycast(rayOrigin, wallDirection, (box.width / 2) + .001f, RayLayers.sideRay);
 					if (hitInfo[i].fraction > 0) {
 						onWall = true;		
+						if (hitInfo[i].point.y < lowestY) {
+							lowestY = hitInfo[i].point.y;
+							lowestYHit = hitInfo[i];
+						}
 					}
 				}
 				
+				// If hitting wall while sliding, update wall slide PS position
+				if (onWall && state.Has(MovementState.WallSliding)) {
+					if (currentWallSlidePS == null) {
+						// TODO: Create a new PS if the old one hasn't disappeared yet
+						currentWallSlidePS = Instantiate(wallSlidePS, new Vector3(lowestYHit.point.x, lowestYHit.point.y, 0f), Quaternion.identity);
+					} else {
+						currentWallSlidePS.transform.position = new Vector3(lowestYHit.point.x, lowestYHit.point.y, 0f);
+						ParticleSystem ps = currentWallSlidePS.GetComponentInChildren<ParticleSystem>();
+						ps.Emit(1);
+						lastWallSlidePSEmission = Time.time;
+					}
+				}
 				// If no wall hit, end wallstick/slide
 				if (!onWall) {
 					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
 				}
+			}
+			// If not wall sliding, remove PS
+			else if (currentWallSlidePS != null) {
+				Destroy(currentWallSlidePS, lastWallSlidePSEmission * .75f);
 			}
 
 			// Wall sliding
@@ -408,12 +434,14 @@ public class PlayerMovementController : MonoBehaviour {
 				} 
 				// Wall jump
 				else if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
-					velocity = new Vector2(-wallDirection.x * jumpAwayDistance, finalJumpSpeed * .8f);
+					velocity = new Vector2(-wallDirection.x * wallJumpAwayDistance, finalJumpSpeed * .8f);
 					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
+					canDoubleJump = false;
 				} 
 				// Double jump
 				else if (!grounded && dashReady && canDoubleJump) {
 					velocity = new Vector2(velocity.x, finalJumpSpeed * .75f);
+					Instantiate(doubleJumpPS, new Vector2(box.center.x, box.center.y - box.height / 2), Quaternion.identity);
 					prevJumpDownTime = 0f;
 					canDoubleJump = false;
 				}
