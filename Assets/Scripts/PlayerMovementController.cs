@@ -104,6 +104,8 @@ public class PlayerMovementController : MonoBehaviour {
 		Normal = 0x01,
 		Hit = 0x02,
 		Recovering = 0x04,
+		RestrictedAttacking = 0x08,
+		FreeAttacking = 0x10,
 	}
 	ConditionState conditionState;
 
@@ -148,8 +150,8 @@ public class PlayerMovementController : MonoBehaviour {
 		bool dashInput = false;
 		bool jumpInput = false;
 
-		// Restrict input if player is hit
-		if (conditionState.Missing(ConditionState.Hit)) {
+		// Restrict input if player is hit or attacking with restricted movement
+		if (conditionState.Missing(ConditionState.Hit | ConditionState.RestrictedAttacking)) {
 			hAxis = Input.GetAxisRaw("Horizontal");
 			dashInput = Input.GetButtonDown("Fire1");
 			jumpInput = Input.GetButton("Jump");
@@ -177,7 +179,10 @@ public class PlayerMovementController : MonoBehaviour {
 
 		// Check if player is currently falling
 		if (velocity.y < 0) {
-			state = state.Include(MovementState.Falling);
+			if (state.Missing(MovementState.Falling)) {
+				state = state.Include(MovementState.Falling);
+				SendMessage("OnFall", SendMessageOptions.DontRequireReceiver);
+			}
 		}
 
 		// Check for collisions below
@@ -563,6 +568,10 @@ public class PlayerMovementController : MonoBehaviour {
 		}
 	}
 
+	void OnFall() {
+		Debug.Log("Falling!");
+	}
+
 	void OnLand() {
 		//Debug.Log("Landed!");
 	}
@@ -657,6 +666,13 @@ public class PlayerMovementController : MonoBehaviour {
 		kbTime = 0;
 		conditionState = conditionState.Remove(ConditionState.Recovering);
 		conditionState = conditionState.Include(ConditionState.Normal);
+	}
+
+	public void ForceMovement(float? x, float? y) {
+		float veloX = (x == null) ? velocity.x : (float)x;
+		float veloY = (y == null) ? velocity.y : (float)y;
+
+		velocity = new Vector2(veloX, veloY);		
 	}
 
 	/// <summary>

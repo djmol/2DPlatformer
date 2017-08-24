@@ -2,25 +2,32 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class Shot : PlayerAttack {
+public class Uppercut : PlayerAttack {
 
-	public float speed;
 	public float lifetime;
-	public Vector2 direction;
-	float time = 0;
-	Vector2 velocity;
+	public float upwardSpeed;
+	float time;
 
 	EnemyHitbox hitbox;
 	bool hit = false;
 
+	PlayerMovementController pmc;
+	bool startedAttack = false;
+
 	// Use this for initialization
 	void Start () {
-		velocity = direction * speed;
+		pmc = GetComponentInParent<PlayerMovementController>();
 	}
 	
 	// Update is called once per frame
 	void Update () {
 		time += Time.deltaTime;
+
+		if (!startedAttack) {
+			startedAttack = true;
+			pmc.ForceMovement(null, upwardSpeed);
+			// Gravity mod? Increase speed and gravity? (So faster jump but slows down quickly?)
+		}
 
 		if (hitbox != null && !hit) {
 			hitbox.Hit(gameObject);
@@ -33,16 +40,9 @@ public class Shot : PlayerAttack {
 		}
 	}
 
-	/// <summary>
-	/// LateUpdate is called every frame, if the Behaviour is enabled.
-	/// It is called after all Update functions have been called.
-	/// </summary>
-	void LateUpdate() {
-		transform.Translate(velocity * Time.deltaTime);
-	}
-
 	override public void HitTaken() {
-		Destroy(gameObject, 0f);
+		Debug.Log("hit taken");
+		//Destroy(gameObject, 0f);
 	}
 
 	/// <summary>
