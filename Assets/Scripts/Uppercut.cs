@@ -5,7 +5,8 @@ using UnityEngine;
 public class Uppercut : PlayerAttack {
 
 	public float lifetime;
-	public float upwardSpeed;
+	public float upwardAttackSpeed;
+	public float upwardHitSpeed;
 	float time;
 
 	EnemyHitbox hitbox;
@@ -14,9 +15,15 @@ public class Uppercut : PlayerAttack {
 	PlayerMovementController pmc;
 	bool startedAttack = false;
 
+	override public void HitTaken() {
+		Debug.Log("hit taken");
+	}
+
 	// Use this for initialization
 	void Start () {
 		pmc = GetComponentInParent<PlayerMovementController>();
+		// Subscribe
+		pmc.OnFall += DestroySelf;
 	}
 	
 	// Update is called once per frame
@@ -25,24 +32,34 @@ public class Uppercut : PlayerAttack {
 
 		if (!startedAttack) {
 			startedAttack = true;
-			pmc.ForceMovement(null, upwardSpeed);
-			// Gravity mod? Increase speed and gravity? (So faster jump but slows down quickly?)
+			pmc.ForceMovement(null, upwardAttackSpeed);
+			// TODO: Gravity mod? Increase speed and gravity? (So faster jump but slows down quickly?)
 		}
 
 		if (hitbox != null && !hit) {
 			hitbox.Hit(gameObject);
+			hitbox.emc.ForceMovement(null, upwardHitSpeed);
+			hitbox.eac.touchDamageEnabled = false;
 			hitbox = null;
 			hit = true;
 		}
 
+		// Does this attack need a lifetime?
 		if (time >= lifetime) {
 			Destroy(gameObject, 0f);
 		}
 	}
 
-	override public void HitTaken() {
-		Debug.Log("hit taken");
-		//Destroy(gameObject, 0f);
+	void DestroySelf(object sender, System.EventArgs e) {
+		Destroy(gameObject, 0f);
+	}
+
+	/// <summary>
+	/// This function is called when the MonoBehaviour will be destroyed.
+	/// </summary>
+	void OnDestroy() {
+		// Unsubscribe
+		pmc.OnFall -= DestroySelf;
 	}
 
 	/// <summary>

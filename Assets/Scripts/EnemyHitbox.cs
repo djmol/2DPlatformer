@@ -4,12 +4,23 @@ using UnityEngine;
 
 public class EnemyHitbox : MonoBehaviour {
 
+	public EnemyAttackController eac { get; private set; }
+	public EnemyMovementController emc { get; private set; }
+	public EnemyHurtbox hurtbox { get; private set; }
+
 	EnemyHealth health;
 	PlayerAttack playerAttack;
+
+	public void Hit(GameObject attackGO) {
+		playerAttack = attackGO.GetComponent<PlayerAttack>();
+	}
 
 	// Use this for initialization
 	void Start () {
 		health = GetComponentInParent<EnemyHealth>();
+		eac = GetComponentInParent<EnemyAttackController>();
+		emc = GetComponentInParent<EnemyMovementController>();
+		hurtbox = GetComponent<EnemyHurtbox>();
 	}
 	
 	// Update is called once per frame
@@ -21,9 +32,5 @@ public class EnemyHitbox : MonoBehaviour {
 			playerAttack.HitTaken();
 			playerAttack = null;
 		}
-	}
-
-	public void Hit(GameObject attackGO) {
-		playerAttack = attackGO.GetComponent<PlayerAttack>();
 	}
 }

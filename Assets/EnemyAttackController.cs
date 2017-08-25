@@ -2,11 +2,10 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class TouchDamage : MonoBehaviour {
+public class EnemyAttackController : MonoBehaviour {
 
-	public float damage;
-	public float knockback;
-	public Vector2 direction = Vector2.zero;
+	public bool touchDamageEnabled = true;
+
 	// Use this for initialization
 	void Start () {
 		

@@ -57,6 +57,13 @@ public class EnemyMovementController : MonoBehaviour {
 	// Appearance
 	SpriteRenderer rend;
 
+	public void ForceMovement(float? x, float? y) {
+		float veloX = (x == null) ? velocity.x : (float)x;
+		float veloY = (y == null) ? velocity.y : (float)y;
+
+		velocity = new Vector2(veloX, veloY);		
+	}
+
 	// Use this for initialization
 	void Start () {
 		headCd = transform.Find("Head").GetComponent<Collider2D>();
@@ -264,4 +271,5 @@ public class EnemyMovementController : MonoBehaviour {
 	float GetNewIdleBehaviorTime() {
 		return idleTime + Random.Range(-idleTimeVar, idleTimeVar);
 	}
+
 }

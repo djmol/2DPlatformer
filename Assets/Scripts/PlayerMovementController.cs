@@ -23,6 +23,9 @@ public class PlayerMovementController : MonoBehaviour {
 	float finalJumpSpeed;
 	Vector2 velocity;
 
+	// Events
+	public event System.EventHandler OnFall;
+
 	// For collisions and convenience
 	Collider2D cd;
 	Rect box;
@@ -96,7 +99,7 @@ public class PlayerMovementController : MonoBehaviour {
 	float kbEndTime = 0.35f;
 	float kbTime = 0;
 	float recoveryBlinkSpeed = 0.1f;
-	TouchDamage touchDamage = null;
+	EnemyHurtbox enemyHurtbox = null;
 
 	// Player condition state
 	[System.Flags]
@@ -111,6 +114,13 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Rendering
 	SpriteRenderer rend;
+
+	public void ForceMovement(float? x, float? y) {
+		float veloX = (x == null) ? velocity.x : (float)x;
+		float veloY = (y == null) ? velocity.y : (float)y;
+
+		velocity = new Vector2(veloX, veloY);		
+	}
 
 	// Use this for initialization
 	void Start () {
@@ -181,7 +191,8 @@ public class PlayerMovementController : MonoBehaviour {
 		if (velocity.y < 0) {
 			if (state.Missing(MovementState.Falling)) {
 				state = state.Include(MovementState.Falling);
-				SendMessage("OnFall", SendMessageOptions.DontRequireReceiver);
+				if (OnFall != null)
+					OnFall(this, System.EventArgs.Empty);
 			}
 		}
 
@@ -500,12 +511,12 @@ public class PlayerMovementController : MonoBehaviour {
 
 		// --- Damage ---
 		// Apply hit if detected by collider
-		if (touchDamage != null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {
+		if (enemyHurtbox != null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {
 			conditionState = conditionState.Include(ConditionState.Hit); 
 			conditionState = conditionState.Remove(ConditionState.Normal);
 			state = state.Remove(MovementState.Dashing | MovementState.WallSticking | MovementState.WallSliding);
 			velocity = Vector2.zero;
-			StartCoroutine(ApplyHit(touchDamage.damage, touchDamage.knockback, touchDamage.direction));
+			StartCoroutine(ApplyHit(enemyHurtbox.damage, enemyHurtbox.knockback, enemyHurtbox.knockbackDirection));
 		}
 
 		//Debug.Log(state);
@@ -568,7 +579,7 @@ public class PlayerMovementController : MonoBehaviour {
 		}
 	}
 
-	void OnFall() {
+	void Fall(object sender, System.EventArgs e) {
 		Debug.Log("Falling!");
 	}
 
@@ -622,15 +633,20 @@ public class PlayerMovementController : MonoBehaviour {
 	/// </summary>
 	/// <param name="other">The other Collider2D involved in this collision.</param>
 	void OnTriggerStay2D(Collider2D other) {
-		if (other.gameObject.GetComponent<TouchDamage>() && touchDamage == null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {					
-			touchDamage = other.gameObject.GetComponent<TouchDamage>();
-			touchDamage.direction = (transform.position.x > other.transform.position.x) ? Vector2.right : Vector2.left;
+		Debug.Log("mostOutie");
+		if (other.gameObject.GetComponent<EnemyHurtbox>() && enemyHurtbox == null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {					
+			Debug.Log("outie");
+			if (other.gameObject.GetComponentInParent<EnemyAttackController>().touchDamageEnabled) {
+				Debug.Log("innie");
+				enemyHurtbox = other.gameObject.GetComponent<EnemyHurtbox>();
+				enemyHurtbox.knockbackDirection = (transform.position.x > other.transform.position.x) ? Vector2.right : Vector2.left;
+			}
 		}
 	}
 
 	IEnumerator ApplyHit (float damage, float knockback, Vector2 knockbackDir) {
 		// Apply damage and knockback from hit
-		touchDamage = null;
+		enemyHurtbox = null;
 		playerHealth.TakeDamage(damage);
 		yield return StartCoroutine(ApplyKnockback(knockback, knockbackDir));
 		yield return StartCoroutine(EndKnockback());
@@ -666,13 +682,6 @@ public class PlayerMovementController : MonoBehaviour {
 		kbTime = 0;
 		conditionState = conditionState.Remove(ConditionState.Recovering);
 		conditionState = conditionState.Include(ConditionState.Normal);
-	}
-
-	public void ForceMovement(float? x, float? y) {
-		float veloX = (x == null) ? velocity.x : (float)x;
-		float veloY = (y == null) ? velocity.y : (float)y;
-
-		velocity = new Vector2(veloX, veloY);		
 	}
 
 	/// <summary>
