@@ -4,6 +4,8 @@ using UnityEngine;
 
 public class EnemyHitbox : MonoBehaviour {
 
+	public bool vulnerable = true;
+
 	public EnemyAttackController eac { get; private set; }
 	public EnemyMovementController emc { get; private set; }
 	public EnemyHurtbox hurtbox { get; private set; }

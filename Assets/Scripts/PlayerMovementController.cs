@@ -8,6 +8,7 @@ public class PlayerMovementController : MonoBehaviour {
 
 	/* Known bugs:
 	/* - If bottom of character falls down through bottom of soft-bottom platform, character warps up to lands on it. Same in vice-versa on soft-top.
+	 * - OnFall event triggers while moving on slopes
 	 */
 
 	// Resources: Travis Martin's platformer physics
@@ -25,8 +26,12 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Events
 	public event System.EventHandler OnFall;
+	public event System.EventHandler OnLand;
+	public event System.EventHandler OnLateralCollision;
+	public event System.EventHandler OnCeilingCollision;
 
 	// For collisions and convenience
+	public PlayerHitbox hitbox { get; private set; }
 	Collider2D cd;
 	Rect box;
 	int layerMask;
@@ -102,15 +107,16 @@ public class PlayerMovementController : MonoBehaviour {
 	EnemyHurtbox enemyHurtbox = null;
 
 	// Player condition state
+	// TODO: Move this somewhere more appropriate
 	[System.Flags]
-	enum ConditionState {
+	public enum ConditionState {
 		Normal = 0x01,
 		Hit = 0x02,
 		Recovering = 0x04,
 		RestrictedAttacking = 0x08,
 		FreeAttacking = 0x10,
 	}
-	ConditionState conditionState;
+	public ConditionState conditionState;
 
 	// Rendering
 	SpriteRenderer rend;
@@ -124,6 +130,7 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Use this for initialization
 	void Start () {
+		hitbox = GetComponent<PlayerHitbox>();
 		cd = GetComponent<BoxCollider2D>();
 		rend = GetComponent<SpriteRenderer>();
 		playerHealth = GetComponent<PlayerHealth>();
@@ -131,8 +138,25 @@ public class PlayerMovementController : MonoBehaviour {
 		state = MovementState.Idle;
 		conditionState = ConditionState.Normal;
 		facing = Vector2.right;
+
+		// Subscribe
+		OnFall += OnFallEvent;
+		OnLand += OnLandEvent;
+		OnLateralCollision += OnLateralCollisionEvent;
+		OnCeilingCollision += OnCeilingCollisionEvent;
 	}
 	
+	/// <summary>
+	/// This function is called when the MonoBehaviour will be destroyed.
+	/// </summary>
+	void OnDestroy() {
+		// Unsubscribe
+		OnFall -= OnFallEvent;
+		OnLand -= OnLandEvent;
+		OnLateralCollision -= OnLateralCollisionEvent;
+		OnCeilingCollision -= OnCeilingCollisionEvent;
+	}
+
 	// Update is called once per frame
 	void Update () {
 	}
@@ -161,7 +185,7 @@ public class PlayerMovementController : MonoBehaviour {
 		bool jumpInput = false;
 
 		// Restrict input if player is hit or attacking with restricted movement
-		if (conditionState.Missing(ConditionState.Hit | ConditionState.RestrictedAttacking)) {
+		if (conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.RestrictedAttacking)) {
 			hAxis = Input.GetAxisRaw("Horizontal");
 			dashInput = Input.GetButtonDown("Fire1");
 			jumpInput = Input.GetButton("Jump");
@@ -232,8 +256,9 @@ public class PlayerMovementController : MonoBehaviour {
 			// If player hits ground, snap to the closest ground
 			if (hit) {
 				// Check if player is landing this frame
-				if (state.Has(MovementState.Falling)) {
-					SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
+				if (state.Has(MovementState.Falling) && state.Missing(MovementState.Landing)) {
+					if (OnLand != null)
+						OnLand(this, System.EventArgs.Empty);
 					state = state.Include(MovementState.Landing);
 					state = state.Remove(MovementState.Jumping);
 				}
@@ -357,7 +382,8 @@ public class PlayerMovementController : MonoBehaviour {
 						// If we hit a wall, snap to it
 						if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
 							transform.Translate(rayDirection * (hitInfo[i].distance - box.width / 2));
-							SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
+							if (OnLateralCollision != null)
+								OnLateralCollision(this, System.EventArgs.Empty);
 							velocity = new Vector2(0, velocity.y);
 
 							// Wall sticking
@@ -504,7 +530,8 @@ public class PlayerMovementController : MonoBehaviour {
 			// TODO: Maybe give rebound instead of snapping?
 			if (hit) {
 				transform.Translate(Vector3.up * (hitInfo[closestHitIndex].distance - box.height / 2));
-				SendMessage("OnCeilingCollision", SendMessageOptions.DontRequireReceiver);
+				if (OnCeilingCollision != null)
+						OnCeilingCollision(this, System.EventArgs.Empty);
 				velocity = new Vector2(velocity.x, 0);
 			}
 		}
@@ -579,20 +606,20 @@ public class PlayerMovementController : MonoBehaviour {
 		}
 	}
 
-	void Fall(object sender, System.EventArgs e) {
-		Debug.Log("Falling!");
+	void OnFallEvent(object sender, System.EventArgs e) {
+
 	}
 
-	void OnLand() {
-		//Debug.Log("Landed!");
+	void OnLandEvent(object sender, System.EventArgs e) {
+
 	}
 
-	void OnLateralCollision() {
-		//Debug.Log("Lateral collision!");
+	void OnLateralCollisionEvent(object sender, System.EventArgs e) {
+
 	}
 
-	void OnCeilingCollision() {
-		//Debug.Log("Ceiling collision!");
+	void OnCeilingCollisionEvent(object sender, System.EventArgs e) {
+
 	}
 
 	void ApplyGroundEffects() {
@@ -633,11 +660,8 @@ public class PlayerMovementController : MonoBehaviour {
 	/// </summary>
 	/// <param name="other">The other Collider2D involved in this collision.</param>
 	void OnTriggerStay2D(Collider2D other) {
-		Debug.Log("mostOutie");
 		if (other.gameObject.GetComponent<EnemyHurtbox>() && enemyHurtbox == null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {					
-			Debug.Log("outie");
-			if (other.gameObject.GetComponentInParent<EnemyAttackController>().touchDamageEnabled) {
-				Debug.Log("innie");
+			if (hitbox.vulnerable && other.gameObject.GetComponentInParent<EnemyAttackController>().touchDamageEnabled) {
 				enemyHurtbox = other.gameObject.GetComponent<EnemyHurtbox>();
 				enemyHurtbox.knockbackDirection = (transform.position.x > other.transform.position.x) ? Vector2.right : Vector2.left;
 			}

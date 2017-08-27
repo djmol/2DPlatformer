@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Extensions;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -22,6 +23,8 @@ public class Uppercut : PlayerAttack {
 	// Use this for initialization
 	void Start () {
 		pmc = GetComponentInParent<PlayerMovementController>();
+		// Player is invincible during attack
+		pmc.hitbox.vulnerable = false;
 		// Subscribe
 		pmc.OnFall += DestroySelf;
 	}
@@ -39,15 +42,14 @@ public class Uppercut : PlayerAttack {
 		if (hitbox != null && !hit) {
 			hitbox.Hit(gameObject);
 			hitbox.emc.ForceMovement(null, upwardHitSpeed);
-			hitbox.eac.touchDamageEnabled = false;
 			hitbox = null;
 			hit = true;
 		}
 
 		// Does this attack need a lifetime?
-		if (time >= lifetime) {
+		/*if (time >= lifetime) {
 			Destroy(gameObject, 0f);
-		}
+		}*/
 	}
 
 	void DestroySelf(object sender, System.EventArgs e) {
@@ -58,6 +60,8 @@ public class Uppercut : PlayerAttack {
 	/// This function is called when the MonoBehaviour will be destroyed.
 	/// </summary>
 	void OnDestroy() {
+		pmc.hitbox.vulnerable = true;
+		pmc.conditionState = pmc.conditionState.Remove(PlayerMovementController.ConditionState.RestrictedAttacking);
 		// Unsubscribe
 		pmc.OnFall -= DestroySelf;
 	}

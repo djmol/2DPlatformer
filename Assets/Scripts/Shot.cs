@@ -17,7 +17,7 @@ public class Shot : PlayerAttack {
 	void Start () {
 		velocity = direction * speed;
 	}
-	
+
 	// Update is called once per frame
 	void Update () {
 		time += Time.deltaTime;

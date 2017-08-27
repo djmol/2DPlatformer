@@ -13,6 +13,12 @@ public class EnemyMovementController : MonoBehaviour {
 	float finalAccel;
 	Vector2 velocity;
 
+	// Events
+	public event System.EventHandler OnFall;
+	public event System.EventHandler OnLand;
+	public event System.EventHandler OnLateralCollision;
+	public event System.EventHandler OnCeilingCollision;
+
 	// Collisions
 	Collider2D headCd;
 	Collider2D bodyCd;
@@ -71,6 +77,23 @@ public class EnemyMovementController : MonoBehaviour {
 		rend = GetComponent<SpriteRenderer>();
 		behaviorState = BehaviorState.Idle;
 		idleBehaviorTime = GetNewIdleBehaviorTime();
+
+		// Subscribe
+		OnFall += OnFallEvent;
+		OnLand += OnLandEvent;
+		OnLateralCollision += OnLateralCollisionEvent;
+		OnCeilingCollision += OnCeilingCollisionEvent;
+	}
+
+	/// <summary>
+	/// This function is called when the MonoBehaviour will be destroyed.
+	/// </summary>
+	void OnDestroy() {
+		// Unsubscribe
+		OnFall -= OnFallEvent;
+		OnLand -= OnLandEvent;
+		OnLateralCollision -= OnLateralCollisionEvent;
+		OnCeilingCollision -= OnCeilingCollisionEvent;
 	}
 	
 	// Update is called once per frame
@@ -101,7 +124,11 @@ public class EnemyMovementController : MonoBehaviour {
 
 		// Check if enemy is falling
 		if (velocity.y < 0) {
-			state = state.Include(MovementState.Falling);
+			if (state.Missing(MovementState.Falling)) {
+				state = state.Include(MovementState.Falling);
+				if (OnFall != null)
+					OnFall(this, System.EventArgs.Empty);
+			}
 		}
 
 		// Determine first and last rays
@@ -137,8 +164,9 @@ public class EnemyMovementController : MonoBehaviour {
 			// If enemy hits ground, snap to the closest ground
 			if (hit) {
 				// Check if enemy is landing this frame
-				if (state.Has(MovementState.Falling)) {
-					SendMessage("OnLand", SendMessageOptions.DontRequireReceiver);
+				if (state.Has(MovementState.Falling) && state.Missing(MovementState.Landing)) {
+					if (OnLand != null)
+						OnLand(this, System.EventArgs.Empty);
 					state = state.Include(MovementState.Landing);
 					state = state.Remove(MovementState.Jumping);
 				}
@@ -234,7 +262,8 @@ public class EnemyMovementController : MonoBehaviour {
 						// If we hit a wall, snap to it
 						if (Mathf.Abs(slopeAngle - 90) < angleLeeway) {
 							transform.Translate(rayDirection * (latHitInfo[i].distance - bodyBox.width / 2));
-							SendMessage("OnLateralCollision", SendMessageOptions.DontRequireReceiver);
+							if (OnLateralCollision != null)
+								OnLateralCollision(this, System.EventArgs.Empty);
 							velocity = new Vector2(0, velocity.y);
 
 							break;
@@ -261,8 +290,21 @@ public class EnemyMovementController : MonoBehaviour {
 		}
 	}
 
-	void OnLand() {}
-	void OnLateralCollision() {}
+	void OnFallEvent(object sender, System.EventArgs e) {
+
+	}
+
+	void OnLandEvent(object sender, System.EventArgs e) {
+
+	}
+
+	void OnLateralCollisionEvent(object sender, System.EventArgs e) {
+
+	}
+
+	void OnCeilingCollisionEvent(object sender, System.EventArgs e) {
+
+	}
 
 	void ApplyGroundEffects() {
 		// TODO: Implement me!

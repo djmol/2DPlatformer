@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using Extensions;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -23,6 +24,8 @@ public class PlayerAttackController : MonoBehaviour {
 	
 	// Update is called once per frame
 	void Update () {
+		if (pmc.conditionState.Missing(PlayerMovementController.ConditionState.Hit) && 
+			pmc.conditionState.Missing(PlayerMovementController.ConditionState.RestrictedAttacking))
 		if (Input.GetButtonUp("Fire2")) {
 			attackInput = true;
 			currentAttack = AttackType.Shot;
@@ -49,6 +52,8 @@ public class PlayerAttackController : MonoBehaviour {
 		GameObject shotGO = Instantiate(shotPrefab, transform.position, Quaternion.identity);
 		Shot shot = shotGO.GetComponent<Shot>();
 		shot.direction = pmc.facing;
+		// TODO: How to unset FreeAttacking on last shot disappearing?
+		//pmc.conditionState = pmc.conditionState.Include(PlayerMovementController.ConditionState.FreeAttacking);
 	}
 
 	void Uppercut() {
@@ -58,5 +63,6 @@ public class PlayerAttackController : MonoBehaviour {
 		Collider2D cd = uppercutGO.GetComponent<Collider2D>();
 		Collider2D charCD = pmc.gameObject.GetComponent<Collider2D>();
 		uppercutGO.transform.position = new Vector3(transform.position.x + (pmc.facing.x * ((cd.bounds.max.x - cd.bounds.min.x) / 2 + (charCD.bounds.max.x - charCD.bounds.min.x) / 2)), transform.position.y, transform.position.z); 
+		pmc.conditionState = pmc.conditionState.Include(PlayerMovementController.ConditionState.RestrictedAttacking);
 	}
 }
