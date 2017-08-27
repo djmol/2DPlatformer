@@ -13,6 +13,7 @@ public class Uppercut : PlayerAttack {
 	EnemyHitbox hitbox;
 	bool hit = false;
 
+	PlayerStateManager state;
 	PlayerMovementController pmc;
 	bool startedAttack = false;
 
@@ -22,6 +23,7 @@ public class Uppercut : PlayerAttack {
 
 	// Use this for initialization
 	void Start () {
+		state = GetComponentInParent<PlayerStateManager>();
 		pmc = GetComponentInParent<PlayerMovementController>();
 		// Player is invincible during attack
 		pmc.hitbox.vulnerable = false;
@@ -61,7 +63,7 @@ public class Uppercut : PlayerAttack {
 	/// </summary>
 	void OnDestroy() {
 		pmc.hitbox.vulnerable = true;
-		pmc.conditionState = pmc.conditionState.Remove(PlayerMovementController.ConditionState.RestrictedAttacking);
+		state.condState = state.condState.Remove(PlayerState.Condition.RestrictedAttacking);
 		// Unsubscribe
 		pmc.OnFall -= DestroySelf;
 	}

@@ -15,17 +15,19 @@ public class PlayerAttackController : MonoBehaviour {
 	}
 	AttackType currentAttack;
 
+	PlayerStateManager state;
 	PlayerMovementController pmc;
 
 	// Use this for initialization
 	void Start () {
+		state = gameObject.GetComponent<PlayerStateManager>();
 		pmc = gameObject.GetComponent<PlayerMovementController>();
 	}
 	
 	// Update is called once per frame
 	void Update () {
-		if (pmc.conditionState.Missing(PlayerMovementController.ConditionState.Hit) && 
-			pmc.conditionState.Missing(PlayerMovementController.ConditionState.RestrictedAttacking))
+		if (state.condState.Missing(PlayerState.Condition.Hit) && 
+			state.condState.Missing(PlayerState.Condition.RestrictedAttacking))
 		if (Input.GetButtonUp("Fire2")) {
 			attackInput = true;
 			currentAttack = AttackType.Shot;
@@ -63,6 +65,6 @@ public class PlayerAttackController : MonoBehaviour {
 		Collider2D cd = uppercutGO.GetComponent<Collider2D>();
 		Collider2D charCD = pmc.gameObject.GetComponent<Collider2D>();
 		uppercutGO.transform.position = new Vector3(transform.position.x + (pmc.facing.x * ((cd.bounds.max.x - cd.bounds.min.x) / 2 + (charCD.bounds.max.x - charCD.bounds.min.x) / 2)), transform.position.y, transform.position.z); 
-		pmc.conditionState = pmc.conditionState.Include(PlayerMovementController.ConditionState.RestrictedAttacking);
+		state.condState = state.condState.Include(PlayerState.Condition.RestrictedAttacking);
 	}
 }

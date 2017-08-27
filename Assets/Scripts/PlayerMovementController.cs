@@ -84,19 +84,8 @@ public class PlayerMovementController : MonoBehaviour {
 	// Ground effects
 	IEnumerable<SpecialGround> groundTypes;
 
-	// Player movement state
-	[System.Flags]
-	enum MovementState {
-		Idle = 0x01,
-		Moving = 0x02,
-		Falling = 0x04,
-		Landing = 0x08,
-		Jumping = 0x10,
-		Dashing = 0x20,
-		WallSticking = 0x40,
-		WallSliding = 0x80,
-	};
-	MovementState state;
+	// State
+	PlayerStateManager state;
 
 	// Health & damage
 	PlayerHealth playerHealth;
@@ -105,18 +94,6 @@ public class PlayerMovementController : MonoBehaviour {
 	float kbTime = 0;
 	float recoveryBlinkSpeed = 0.1f;
 	EnemyHurtbox enemyHurtbox = null;
-
-	// Player condition state
-	// TODO: Move this somewhere more appropriate
-	[System.Flags]
-	public enum ConditionState {
-		Normal = 0x01,
-		Hit = 0x02,
-		Recovering = 0x04,
-		RestrictedAttacking = 0x08,
-		FreeAttacking = 0x10,
-	}
-	public ConditionState conditionState;
 
 	// Rendering
 	SpriteRenderer rend;
@@ -130,13 +107,12 @@ public class PlayerMovementController : MonoBehaviour {
 
 	// Use this for initialization
 	void Start () {
+		state = GetComponent<PlayerStateManager>();
 		hitbox = GetComponent<PlayerHitbox>();
 		cd = GetComponent<BoxCollider2D>();
 		rend = GetComponent<SpriteRenderer>();
 		playerHealth = GetComponent<PlayerHealth>();
 		layerMask = 1 << LayerMask.NameToLayer("NormalCollisions");
-		state = MovementState.Idle;
-		conditionState = ConditionState.Normal;
 		facing = Vector2.right;
 
 		// Subscribe
@@ -185,7 +161,7 @@ public class PlayerMovementController : MonoBehaviour {
 		bool jumpInput = false;
 
 		// Restrict input if player is hit or attacking with restricted movement
-		if (conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.RestrictedAttacking)) {
+		if (state.condState.Missing(PlayerState.Condition.Hit) && state.condState.Missing(PlayerState.Condition.RestrictedAttacking)) {
 			hAxis = Input.GetAxisRaw("Horizontal");
 			dashInput = Input.GetButtonDown("Fire1");
 			jumpInput = Input.GetButton("Jump");
@@ -197,24 +173,24 @@ public class PlayerMovementController : MonoBehaviour {
 
 		// Set idle state according to input
 		if (hAxis == 0f && !dashInput && !jumpInput) {
-			state = state.Include(MovementState.Idle);
+			state.moveState = state.moveState.Include(PlayerState.Movement.Idle);
 		} else {
-			state = state.Remove(MovementState.Idle);
+			state.moveState = state.moveState.Remove(PlayerState.Movement.Idle);
 		}
 
 		// --- Gravity & Ground Check ---
 		// Set flag to prevent player from jumping before character lands
-		state = state.Remove(MovementState.Landing);
+		state.moveState = state.moveState.Remove(PlayerState.Movement.Landing);
 		
 		// If player is not grounded or sticking to wall, apply gravity
-		if (!grounded && state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding)) {
+		if (!grounded && state.moveState.Missing(PlayerState.Movement.WallSticking) && state.moveState.Missing(PlayerState.Movement.WallSliding)) {
 			velocity = new Vector2(velocity.x, Mathf.Max(velocity.y - gravity, -maxFall));
 		}
 
 		// Check if player is currently falling
 		if (velocity.y < 0) {
-			if (state.Missing(MovementState.Falling)) {
-				state = state.Include(MovementState.Falling);
+			if (state.moveState.Missing(PlayerState.Movement.Falling)) {
+				state.moveState = state.moveState.Include(PlayerState.Movement.Falling);
 				if (OnFall != null)
 					OnFall(this, System.EventArgs.Empty);
 			}
@@ -222,7 +198,7 @@ public class PlayerMovementController : MonoBehaviour {
 
 		// Check for collisions below
 		// (No need to check if player is in mid-air but not falling)
-		if (grounded || state.Has(MovementState.Falling)) {
+		if (grounded || state.moveState.Has(PlayerState.Movement.Falling)) {
 			// Determine first and last rays
 			Vector2 minRay = new Vector2(box.xMin + margin, box.center.y);
 			Vector2 maxRay = new Vector2(box.xMax - margin, box.center.y);	
@@ -256,15 +232,15 @@ public class PlayerMovementController : MonoBehaviour {
 			// If player hits ground, snap to the closest ground
 			if (hit) {
 				// Check if player is landing this frame
-				if (state.Has(MovementState.Falling) && state.Missing(MovementState.Landing)) {
+				if (state.moveState.Has(PlayerState.Movement.Falling) && state.moveState.Missing(PlayerState.Movement.Landing)) {
 					if (OnLand != null)
 						OnLand(this, System.EventArgs.Empty);
-					state = state.Include(MovementState.Landing);
-					state = state.Remove(MovementState.Jumping);
+					state.moveState = state.moveState.Include(PlayerState.Movement.Landing);
+					state.moveState = state.moveState.Remove(PlayerState.Movement.Jumping);
 				}
 				grounded = true;
-				state = state.Remove(MovementState.Falling);		
-				state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
+				state.moveState = state.moveState.Remove(PlayerState.Movement.Falling);		
+				state.moveState = state.moveState.Remove(PlayerState.Movement.WallSticking | PlayerState.Movement.WallSliding);
 				exitingDash = false;
 				Debug.DrawLine(box.center, hitInfo[closestHitIndex].point, Color.white, 1f);
 				transform.Translate(Vector2.down * (hitInfo[closestHitIndex].distance - box.height / 2));
@@ -291,8 +267,8 @@ public class PlayerMovementController : MonoBehaviour {
 			}
 		}
 
-		if (state.Has(MovementState.Landing)) {
-			state = state.Remove(MovementState.Dashing);
+		if (state.moveState.Has(PlayerState.Movement.Landing)) {
+			state.moveState = state.moveState.Remove(PlayerState.Movement.Dashing);
 			exitingDash = false;
 		}
 
@@ -313,7 +289,7 @@ public class PlayerMovementController : MonoBehaviour {
 					if (grounded && dashReady) {
 						StartCoroutine(Dash());
 						newVelocityX = dashSpeed * hAxis;
-					} else if ((state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) & dashReady) {
+					} else if ((state.moveState.Has(PlayerState.Movement.WallSticking) || state.moveState.Has(PlayerState.Movement.WallSliding)) & dashReady) {
 						StartCoroutine(Dash());
 						//newVelocityX = dashSpeed * hAxis;
 					}
@@ -327,7 +303,7 @@ public class PlayerMovementController : MonoBehaviour {
 				Vector2 newPosition = transform.position;
 				newPosition.y += -closestHitInfo.normal.x * Mathf.Abs(newVelocityX) * Time.deltaTime * ((newVelocityX - closestHitInfo.normal.x > 0) ? 1 : -1);
 				transform.position = newPosition;
-				state = state.Remove(MovementState.Landing);			
+				state.moveState = state.moveState.Remove(PlayerState.Movement.Landing);			
 			} 
 		}
 		// Decelerate if moving without input
@@ -387,11 +363,11 @@ public class PlayerMovementController : MonoBehaviour {
 							velocity = new Vector2(0, velocity.y);
 
 							// Wall sticking
-							if (canStickWall && !grounded && (state.Missing(MovementState.WallSticking) && state.Missing(MovementState.WallSliding))) {
+							if (canStickWall && !grounded && (state.moveState.Missing(PlayerState.Movement.WallSticking) && state.moveState.Missing(PlayerState.Movement.WallSliding))) {
 								// Only stick if moving towards wall
 								if (hAxis != 0 && ((hAxis < 0) == (rayDirection.x < 0))) {
-									state = state.Include(MovementState.WallSticking);
-									state = state.Remove(MovementState.Jumping);
+									state.moveState = state.moveState.Include(PlayerState.Movement.WallSticking);
+									state.moveState = state.moveState.Remove(PlayerState.Movement.Jumping);
 									wallDirection = rayDirection;
 									velocity = new Vector2(0,0);
 									wallSlideTime = Time.time + wallSlideDelay;
@@ -406,7 +382,7 @@ public class PlayerMovementController : MonoBehaviour {
 			}
 
 			// Wall sticking
-			if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
+			if (state.moveState.Has(PlayerState.Movement.WallSticking) || state.moveState.Has(PlayerState.Movement.WallSliding)) {
 				velocity = new Vector2(0, velocity.y);
 				bool onWall = false;
 				float lowestY = float.MaxValue;
@@ -428,7 +404,7 @@ public class PlayerMovementController : MonoBehaviour {
 				}
 				
 				// If hitting wall while sliding, update wall slide PS position
-				if (onWall && state.Has(MovementState.WallSliding)) {
+				if (onWall && state.moveState.Has(PlayerState.Movement.WallSliding)) {
 					if (currentWallSlidePS == null) {
 						// TODO: Create a new PS if the old one hasn't disappeared yet
 						currentWallSlidePS = Instantiate(wallSlidePS, new Vector3(lowestYHit.point.x, lowestYHit.point.y, 0f), Quaternion.identity);
@@ -441,7 +417,7 @@ public class PlayerMovementController : MonoBehaviour {
 				}
 				// If no wall hit, end wallstick/slide
 				if (!onWall) {
-					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
+					state.moveState = state.moveState.Remove(PlayerState.Movement.WallSticking | PlayerState.Movement.WallSliding);
 				}
 			}
 			// If not wall sliding, remove PS
@@ -450,15 +426,15 @@ public class PlayerMovementController : MonoBehaviour {
 			}
 
 			// Wall sliding
-			if (state.Has(MovementState.WallSticking) && Time.time >= wallSlideTime) {
+			if (state.moveState.Has(PlayerState.Movement.WallSticking) && Time.time >= wallSlideTime) {
 				velocity = Vector2.down * wallSlideSpeed;
-				state = state.Remove(MovementState.WallSticking);
-				state = state.Include(MovementState.WallSliding);
+				state.moveState = state.moveState.Remove(PlayerState.Movement.WallSticking);
+				state.moveState = state.moveState.Include(PlayerState.Movement.WallSliding);
 			}
 		}
 
 		// --- Jumping ---
-		if (canJump && state.Missing(MovementState.Landing)) {
+		if (canJump && state.moveState.Missing(PlayerState.Movement.Landing)) {
 			// Prevent player from holding down jump to autobounce
 			if (jumpInput && !jumpPressedLastFrame) {
 				prevJumpDownTime = Time.time;
@@ -475,9 +451,9 @@ public class PlayerMovementController : MonoBehaviour {
 					canDoubleJump = true;
 				} 
 				// Wall jump
-				else if (state.Has(MovementState.WallSticking) || state.Has(MovementState.WallSliding)) {
+				else if (state.moveState.Has(PlayerState.Movement.WallSticking) || state.moveState.Has(PlayerState.Movement.WallSliding)) {
 					velocity = new Vector2(-wallDirection.x * wallJumpAwayDistance, finalJumpSpeed * .8f);
-					state = state.Remove(MovementState.WallSticking | MovementState.WallSliding);
+					state.moveState = state.moveState.Remove(PlayerState.Movement.WallSticking | PlayerState.Movement.WallSliding);
 					canDoubleJump = false;
 				} 
 				// Double jump
@@ -487,8 +463,8 @@ public class PlayerMovementController : MonoBehaviour {
 					prevJumpDownTime = 0f;
 					canDoubleJump = false;
 				}
-				state = state.Remove(MovementState.Falling);
-				state = state.Include(MovementState.Jumping);
+				state.moveState = state.moveState.Remove(PlayerState.Movement.Falling);
+				state.moveState = state.moveState.Include(PlayerState.Movement.Jumping);
 			}
 			jumpPressedLastFrame = jumpInput;
 		}
@@ -538,10 +514,10 @@ public class PlayerMovementController : MonoBehaviour {
 
 		// --- Damage ---
 		// Apply hit if detected by collider
-		if (enemyHurtbox != null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {
-			conditionState = conditionState.Include(ConditionState.Hit); 
-			conditionState = conditionState.Remove(ConditionState.Normal);
-			state = state.Remove(MovementState.Dashing | MovementState.WallSticking | MovementState.WallSliding);
+		if (enemyHurtbox != null && state.condState.Missing(PlayerState.Condition.Hit) && state.condState.Missing(PlayerState.Condition.Recovering)) {
+			state.condState = state.condState.Include(PlayerState.Condition.Hit); 
+			state.condState = state.condState.Remove(PlayerState.Condition.Normal);
+			state.moveState = state.moveState.Remove(PlayerState.Movement.Dashing | PlayerState.Movement.WallSticking | PlayerState.Movement.WallSliding);
 			velocity = Vector2.zero;
 			StartCoroutine(ApplyHit(enemyHurtbox.damage, enemyHurtbox.knockback, enemyHurtbox.knockbackDirection));
 		}
@@ -562,7 +538,7 @@ public class PlayerMovementController : MonoBehaviour {
 		currentDashTime = dashTime;
 		while (currentDashTime > 0.0) {
 			StartCoroutine(CreateDashTrail());
-			state = state.Include(MovementState.Dashing);
+			state.moveState = state.moveState.Include(PlayerState.Movement.Dashing);
 			maxSpeed = dashSpeed;
 			currentDashTime -= Time.deltaTime;
 			yield return null;
@@ -572,7 +548,7 @@ public class PlayerMovementController : MonoBehaviour {
 	IEnumerator ExitDash () {
 		// Terminate dash, but maintain max speed from dash until dash is exited
 		// This is to keep momentum in mid-air once the dash has ended
-		state = state.Remove(MovementState.Dashing);
+		state.moveState = state.moveState.Remove(PlayerState.Movement.Dashing);
 		exitingDash = true;
 		while (exitingDash) {
 			yield return null;
@@ -631,7 +607,7 @@ public class PlayerMovementController : MonoBehaviour {
 			} 
 			// Bouncy ground
 			else if (type.Equals(typeof(BouncyGround))) {
-				if (state.Missing(MovementState.Landing)) {
+				if (state.moveState.Missing(PlayerState.Movement.Landing)) {
 					finalJumpSpeed = jumpSpeed * ((BouncyGround)specialGround).bounceJumpRate;
 					velocity = new Vector2(velocity.x, jumpSpeed * ((BouncyGround)specialGround).bounceRate);
 					canDoubleJump = ((BouncyGround)specialGround).doubleJumpEnabled;
@@ -648,9 +624,9 @@ public class PlayerMovementController : MonoBehaviour {
 	void LateUpdate() {
 		transform.Translate(velocity * Time.deltaTime);
 		if (velocity != Vector2.zero) {
-			state = state.Include(MovementState.Moving);
+			state.moveState = state.moveState.Include(PlayerState.Movement.Moving);
 		} else {
-			state = state.Remove(MovementState.Moving);
+			state.moveState = state.moveState.Remove(PlayerState.Movement.Moving);
 		}
 	}
 
@@ -660,7 +636,7 @@ public class PlayerMovementController : MonoBehaviour {
 	/// </summary>
 	/// <param name="other">The other Collider2D involved in this collision.</param>
 	void OnTriggerStay2D(Collider2D other) {
-		if (other.gameObject.GetComponent<EnemyHurtbox>() && enemyHurtbox == null && conditionState.Missing(ConditionState.Hit) && conditionState.Missing(ConditionState.Recovering)) {					
+		if (other.gameObject.GetComponent<EnemyHurtbox>() && enemyHurtbox == null && state.condState.Missing(PlayerState.Condition.Hit) && state.condState.Missing(PlayerState.Condition.Recovering)) {					
 			if (hitbox.vulnerable && other.gameObject.GetComponentInParent<EnemyAttackController>().touchDamageEnabled) {
 				enemyHurtbox = other.gameObject.GetComponent<EnemyHurtbox>();
 				enemyHurtbox.knockbackDirection = (transform.position.x > other.transform.position.x) ? Vector2.right : Vector2.left;
@@ -690,8 +666,8 @@ public class PlayerMovementController : MonoBehaviour {
 
 	IEnumerator EndKnockback() {
 		kbTime = 0;
-		conditionState = conditionState.Remove(ConditionState.Hit);
-		conditionState = conditionState.Include(ConditionState.Recovering);
+		state.condState = state.condState.Remove(PlayerState.Condition.Hit);
+		state.condState = state.condState.Include(PlayerState.Condition.Recovering);
 		// Blink and enjoy the recovery period
 		while (kbTime < kbRecoveryTime * recoveryBlinkSpeed) {
 			kbTime += Time.deltaTime;
@@ -704,8 +680,8 @@ public class PlayerMovementController : MonoBehaviour {
 
 	void EndHit() {
 		kbTime = 0;
-		conditionState = conditionState.Remove(ConditionState.Recovering);
-		conditionState = conditionState.Include(ConditionState.Normal);
+		state.condState = state.condState.Remove(PlayerState.Condition.Recovering);
+		state.condState = state.condState.Include(PlayerState.Condition.Normal);
 	}
 
 	/// <summary>
