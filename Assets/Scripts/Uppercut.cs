@@ -38,6 +38,8 @@ public class Uppercut : PlayerAttack {
 		if (!startedAttack) {
 			startedAttack = true;
 			pmc.ForceMovement(null, upwardAttackSpeed);
+			state.moveState = state.moveState.Remove(PlayerState.Movement.Falling);
+			state.moveState = state.moveState.Include(PlayerState.Movement.Jumping);
 			// TODO: Gravity mod? Increase speed and gravity? (So faster jump but slows down quickly?)
 		}
 
@@ -55,15 +57,20 @@ public class Uppercut : PlayerAttack {
 	}
 
 	void DestroySelf(object sender, System.EventArgs e) {
-		Destroy(gameObject, 0f);
+		Destroy(gameObject.transform.parent.gameObject, 0f);
 	}
 
 	/// <summary>
 	/// This function is called when the MonoBehaviour will be destroyed.
 	/// </summary>
 	void OnDestroy() {
+		// Make player vulnerable again
 		pmc.hitbox.vulnerable = true;
+
+		// Set player state
 		state.condState = state.condState.Remove(PlayerState.Condition.RestrictedAttacking);
+		state.condState = state.condState.Include(PlayerState.Condition.Normal);
+
 		// Unsubscribe
 		pmc.OnFall -= DestroySelf;
 	}

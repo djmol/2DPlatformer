@@ -5,6 +5,7 @@ using UnityEngine;
 abstract public class PlayerAttack : MonoBehaviour {
 
 	public float damage;
+	public float cooldown;
 
 	// Use this for initialization
 	void Start () {
