@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 abstract public class Health : MonoBehaviour {
+	public float maxHp;
 	public float hp;
 	public float regenRate;
 	public bool canRegenHealth;

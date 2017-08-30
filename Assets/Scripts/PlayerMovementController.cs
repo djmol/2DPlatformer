@@ -689,7 +689,7 @@ public class PlayerMovementController : MonoBehaviour {
 	/// This function can be called multiple times per frame (one call per event).
 	/// </summary>
 	void OnGUI() {
-		GUI.Box(new Rect(5,5,80,40), "vel.X: " + velocity.x + "\nvel.Y: " + velocity.y);
-		GUI.Box(new Rect(5,50,120,40), "" + playerHealth.hp);
+		//GUI.Box(new Rect(5,5,80,40), "vel.X: " + velocity.x + "\nvel.Y: " + velocity.y);
+		//GUI.Box(new Rect(5,50,120,40), "" + playerHealth.hp);
 	}
 }
