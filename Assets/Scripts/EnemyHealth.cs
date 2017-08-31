@@ -16,6 +16,7 @@ public class EnemyHealth : Health {
 	}
 
 	void Die() {
+		SendMessage("OnDeath");
 		gameObject.SetActive(false);
 	}
 }

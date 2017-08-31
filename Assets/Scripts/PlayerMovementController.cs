@@ -583,7 +583,7 @@ public class PlayerMovementController : MonoBehaviour {
 	}
 
 	void OnFallEvent(object sender, System.EventArgs e) {
-		Debug.Log("wii fall");
+
 	}
 
 	void OnLandEvent(object sender, System.EventArgs e) {

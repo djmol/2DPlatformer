@@ -30,7 +30,6 @@ public class EnemyHitbox : MonoBehaviour {
 		// If hit by player attack, apply damage
 		if (playerAttack != null) {
 			health.TakeDamage(playerAttack.damage);
-			Debug.Log(playerAttack.damage);
 			playerAttack.HitTaken();
 			playerAttack = null;
 		}

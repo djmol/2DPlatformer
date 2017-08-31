@@ -67,7 +67,8 @@ public class EnemyMovementController : MonoBehaviour {
 		float veloX = (x == null) ? velocity.x : (float)x;
 		float veloY = (y == null) ? velocity.y : (float)y;
 
-		velocity = new Vector2(veloX, veloY);		
+		velocity = new Vector2(veloX, veloY);
+		Debug.Log("new velo " + velocity.x + " " + velocity.y);		
 	}
 
 	// Use this for initialization
@@ -191,7 +192,7 @@ public class EnemyMovementController : MonoBehaviour {
 					hAxis = newHAxis;
 					behaviorTime = 0f;
 					idleBehaviorTime = GetNewIdleBehaviorTime();
-					Debug.Log("Rolled: " + hAxis + " for " + idleBehaviorTime);
+					//Debug.Log("Rolled: " + hAxis + " for " + idleBehaviorTime);
 				}
 			}
 
